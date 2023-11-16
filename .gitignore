@@ -1,3 +1,6 @@
+# Archive files
+archive/**
+
 # Compiled Lua sources
 luac.out
 
