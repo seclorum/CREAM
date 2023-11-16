@@ -8,7 +8,7 @@ CREAM_APP_SERVER_HOST = "localhost"
 CREAM_APP_SERVER_PORT = arg[1] or 8081
 CREAM_APP_VERSION = "{\"Version\":\"1.0\", buildDate: \"" .. require("buildDate") .. "\"}"
 
-CREAM_ARCHIVE_DIRECTORY = "./archive/"
+CREAM_ARCHIVE_DIRECTORY = "/home/pi/Documents/Development/mix-o/cream/archive/"
 
 CREAM_HOST = "localhost"
 CREAM_COMMAND_PORT = arg[2] or 8080
