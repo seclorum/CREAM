@@ -60,12 +60,48 @@ local responseHTML_A = [[
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>cream audio broker - current state</title>
     <style>
+		body {
+  			font-family: 'Courier New', monospace; /* Use a monospaced font */
+  			background-color: #1b2a3f; /* Grey-blue background color */
+  			color: #6A9Ddb; /* Blue text color */
+		}
+
+		div.ex1 {
+		  width: 500px;
+		  margin: auto;
+		  border: 3px solid #73AD21;
+		}
+		
+		div.ex2 {
+		  max-width: 500px;
+		  margin: auto;
+		  border: 3px solid #73AD21;
+		}
+
+		h1, h2, h3, h4, h5, h6 {
+  			color: #59A0F9; /* Blue heading colors */
+		}
+
+		a {
+  			color: #2ecc71; /* Green link color */
+		}
+
         #json-container {
             font-family: 'Courier New', Courier, monospace;
             white-space: pre-wrap;
-            padding: 10px;
-            border: 1px solid #ccc;
             background-color: #f9f9f9;
+            display: none;
+            padding: 0 18px;
+            overflow: hidden;
+            border: 1px solid #ddd;
+        }
+
+        .collapsible {
+            cursor: pointer;
+            padding: 18px;
+            text-align: left;
+            border: 1px solid #ddd;
+            margin-bottom: 16px;
         }
 
         .string {
@@ -97,14 +133,24 @@ local responseHTML_A = [[
 </head>
 <body>
 <div id="function-menu">
-<a href="/start">Start Recording</a>
-<a href="/stop">Stop Recording</a>
+<a href="/start">START Recording</a>
+<a href="/stop">STOP Recording</a>
 </div>
+<div class="collapsible" onClick="toggleContent()">json</div>
 <div id="json-container"></div>
+<div id="wav-tracks"></div>
 <script>
 var jsonObject = ]]
 
 local responseHTML_B = [[;
+function toggleContent() {
+	var content = document.getElementById("json-container");
+	if (content.style.display === "none") {
+		content.style.display = "block";
+	} else {
+		content.style.display = "none";
+	}
+}
 // Function to prettify and render JSON object
 function prettifyAndRenderJSON(jsonObj, containerId) {
     var container = document.getElementById(containerId);
@@ -146,6 +192,11 @@ function prettifyAndRenderJSON(jsonObj, containerId) {
     // Append the <pre> element to the container
     container.appendChild(preElement);
 
+}
+
+function renderWAVTracks(jsonObj, containerId) {
+    var container = document.getElementById(containerId);
+    var jsonString = JSON.stringify(jsonObj, null, 2); // The third parameter (2) is for indentation
 		var Tracks = jsonObj.app.edit.Tracks;
 
         // Create an HTML table
@@ -153,10 +204,11 @@ function prettifyAndRenderJSON(jsonObj, containerId) {
         table.border = "1";
 
         // Create table header
-        var statusRow = table.insertRow(0);
-        var headerRow = table.insertRow(1);
+        var headerRow = table.insertRow(0);
         var headerCell = headerRow.insertCell(0);
         headerCell.innerHTML = "Wav Files";
+        var statusRow = table.insertRow(0);
+		statusRow.innerHTML = "status:"
 
         // Create table rows with links
         for (var i = 0; i < Tracks.length; i++) {
@@ -167,8 +219,8 @@ function prettifyAndRenderJSON(jsonObj, containerId) {
 	            highlight_style = 'style="background-color: red;"'
 			}
             cell.innerHTML = '<li' + highlight_style + '>' + 
-								'<a class="link" href="/static/' + Tracks[i] + 
-								'" target="_blank">' + Tracks[i] + '</a>' +
+								'<a class="link" href="/play/' + Tracks[i] + 
+								'" target="_blank">' + Tracks[i] + '</a><pre>' +
 								'<audio controls="controls"><source src="/static/' +
 								Tracks[i] + 
 								'" type="audio/x-wav" /></audio>' + 
@@ -190,6 +242,8 @@ function openLink(fileName) {
 
 // Call the prettifyAndRenderJSON function with your JSON object and the container ID
 prettifyAndRenderJSON(jsonObject, "json-container");
+renderWAVTracks(jsonObject, "wav-tracks");
+
 function renderJSON(jsonObj, containerId) {
     var container = document.getElementById(containerId);
     var jsonString = JSON.stringify(jsonObj, null, 8); // The third parameter (2) is for indentation
