@@ -9,7 +9,7 @@ ExecStop=/opt/austrianAudio/bin/cream stop
 KillMode=control-group
 Restart=on-failure
 RestartPreventExitStatus=255
-Type=notify
+Type=forking
 RuntimeDirectory=CREAM
 RuntimeDirectoryMode=0755
 

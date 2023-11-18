@@ -14,7 +14,7 @@ fi
 
 start_cream() {
 	echo "Starting CREAM device services daemon at $CREAM_DAEMON_BIN"
-	$CREAM_DAEMON_BIN >> /opt/austrianAudio/var/CREAM/cream.log 2>&1 &
+	nohup $CREAM_DAEMON_BIN >> /opt/austrianAudio/var/CREAM/cream.log 2>&1 & disown
 }
 
 stop_cream() {
