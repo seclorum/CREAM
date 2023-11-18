@@ -33,7 +33,7 @@ wait:
 	while inotifywait -e close_write  .; do pkill luajit ; luajit main.lua &  done
 
 reqs:
-	sudo apt-get install -y luajit luarocks git build-essential libssl-dev libluajit-5.1-dev lua-cjson-dev
+	sudo apt-get install -y luajit luarocks git build-essential libssl-dev libluajit-5.1-dev lua-cjson-dev sysv-rc-conf meson
 	echo "Luarocks dependencies:"
 
 reqs-lua:
