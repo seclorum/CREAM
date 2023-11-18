@@ -54,7 +54,7 @@ reqs-lua:
 trace:	./cream.armv7l
 	strace -r -s 1024 -o /opt/austrianAudio/var/CREAM/`date +"%Y%m%d-%H%M%S"`-app_strace.log.txt ./cream.armv7l
 
-dist:	${CREAM_APP_TARGET}
+distro:
 	cp -rfvp ${CREAM_APP_TARGET} ${CREAM_DIST_INST_DIR}
 	make -C dist/
 	ls -alF dist/*.deb
