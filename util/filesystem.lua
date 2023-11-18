@@ -1,5 +1,5 @@
 function scandirForWAV(directory)
-	local pfile = assert(io.popen(("find '%s' -maxdepth 1 -name '*.*' -print0"):format(directory), 'r'))
+	local pfile = assert(io.popen(("find '%s' -maxdepth 1 -name '*.wav' -print0"):format(directory), 'r'))
 	local list = pfile:read('*a')
     pfile:close()
 

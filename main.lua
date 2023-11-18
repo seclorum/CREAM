@@ -1,5 +1,5 @@
 
-require ("config")
+config = require ("config")
 
 local turbo = require "turbo"
 local turbo_thread = require "turbo.thread" 
@@ -29,11 +29,11 @@ end
 cSTACK = turbo.structs.deque:new()
 
 cSTACK:append(function()
-	dumpConfig()
+	config.dump()
 	syslog.setlogmask(LOG_DEBUG)
-	syslog.openlog(APP_NAME, LOG_SYSLOG)
-	cLOG(syslog.LOG_INFO, APP_NAME .. " starts with protocol version " .. CREAM_PROTOCOL_VERSION .. " on " .. CREAM_APP_SERVER_HOST .. ":" .. CREAM_APP_SERVER_PORT)
-	cLOG(syslog.LOG_INFO, CREAM_APP_VERSION)
+	syslog.openlog(config.APP_NAME, LOG_SYSLOG)
+	cLOG(syslog.LOG_INFO, config.APP_NAME .. " starts with protocol version " .. config.CREAM_PROTOCOL_VERSION .. " on " .. config.CREAM_APP_SERVER_HOST .. ":" .. config.CREAM_APP_SERVER_PORT)
+	cLOG(syslog.LOG_INFO, config.CREAM_APP_VERSION)
 
  	CREAM.devices:init()
 	--CREAM.mixer:init()
@@ -46,6 +46,7 @@ end)
 -- cream Web Handlers
 local creamWebStatusHandler = class("creamWebStatusHandler", turbo.web.RequestHandler)
 local creamWebStopHandler = class("creamWebStopHandler", turbo.web.RequestHandler)
+local creamWebPlayHandler = class("creamWebPlayHandler", turbo.web.RequestHandler)
 local creamWebStartHandler = class("creamWebStartHandler", turbo.web.RequestHandler)
 local creamWebRecordStartHandler = class("creamWebRecordStartHandler", turbo.web.RequestHandler)
 local creamWebRecordStopHandler = class("creamWebRecordStopHandler", turbo.web.RequestHandler)
@@ -136,13 +137,17 @@ local responseHTML_A = [[
 <a href="/start">START Recording</a>
 <a href="/stop">STOP Recording</a>
 </div>
-<div class="collapsible" onClick="toggleContent()">json</div>
-<div id="json-container"></div>
-<div id="wav-tracks"></div>
-<script>
-var jsonObject = ]]
 
-local responseHTML_B = [[;
+<div id="current-status"></div>
+
+<div id="wav-tracks"></div>
+
+<div class="collapsible" onClick="toggleContent()">json
+	<div id="json-container"></div>
+</div>
+
+
+<script>
 function toggleContent() {
 	var content = document.getElementById("json-container");
 	if (content.style.display === "none") {
@@ -151,6 +156,11 @@ function toggleContent() {
 		content.style.display = "none";
 	}
 }
+ 
+var jsonObject = ]]
+
+local responseHTML_B = [[;
+
 // Function to prettify and render JSON object
 function prettifyAndRenderJSON(jsonObj, containerId) {
     var container = document.getElementById(containerId);
@@ -196,40 +206,57 @@ function prettifyAndRenderJSON(jsonObj, containerId) {
 
 function renderWAVTracks(jsonObj, containerId) {
     var container = document.getElementById(containerId);
-    var jsonString = JSON.stringify(jsonObj, null, 2); // The third parameter (2) is for indentation
+    var jsonString = JSON.stringify(jsonObj, null, 2);
 		var Tracks = jsonObj.app.edit.Tracks;
+		var sortedTracks = Tracks.sort();
 
-        // Create an HTML table
-        var table = document.createElement("table");
-        table.border = "1";
+        var wavTable = document.createElement("table");
+        wavTable.border = "1";
 
-        // Create table header
-        var headerRow = table.insertRow(0);
+        // Create wavTable header
+        var headerRow = wavTable.insertRow(0);
         var headerCell = headerRow.insertCell(0);
         headerCell.innerHTML = "Wav Files";
-        var statusRow = table.insertRow(0);
-		statusRow.innerHTML = "status:"
 
-        // Create table rows with links
-        for (var i = 0; i < Tracks.length; i++) {
+        // Create wavTable rows with links
+        for (var i = 0; i < sortedTracks.length; i++) {
 		   highlight_style = "";
-            var row = table.insertRow(i + 1);
+            var row = wavTable.insertRow(0);
             var cell = row.insertCell(0);
-			if (jsonObj.app.edit.current_recording == Tracks[i]) {
+			if (jsonObj.app.edit.current_recording == sortedTracks[i]) {
 	            highlight_style = 'style="background-color: red;"'
 			}
-            cell.innerHTML = '<li' + highlight_style + '>' + 
-								'<a class="link" href="/play/' + Tracks[i] + 
-								'" target="_blank">' + Tracks[i] + '</a><pre>' +
+            cell.innerHTML = '<li ' + highlight_style + '>' + 
+								'<a class="link" href="/play/' + sortedTracks[i] + 
+								'" target="_blank">' + sortedTracks[i] + '</a><pre>' +
 								'<audio controls="controls"><source src="/static/' +
-								Tracks[i] + 
+								sortedTracks[i] + 
 								'" type="audio/x-wav" /></audio>' + 
 								'</li>';
-
         }
 
-        // Append the table to the container
-        container.appendChild(table);
+        // Append the wavTable to the container
+        container.appendChild(wavTable);
+}
+
+function renderStatus(jsonObj, containerId) {
+    var container = document.getElementById(containerId);
+	var CurrentRecording = jsonObj.app.edit.current_recording;
+    var statusTable = document.createElement("table");
+    statusTable.border = "1";
+
+    // Create wavTable header
+    var headerRow = statusTable.insertRow(0);
+    var headerCell = headerRow.insertCell(0);
+	
+	if (CurrentRecording) {
+    	headerCell.innerHTML = '<li>RECORDING:<pre>' + CurrentRecording + '</li>'; 
+	} else {
+    	headerCell.innerHTML = '<li>Not Currently Recording.</li>'; 
+	}
+
+	container.appendChild(statusTable);
+ 
 }
 
 
@@ -241,18 +268,22 @@ function openLink(fileName) {
 
 
 // Call the prettifyAndRenderJSON function with your JSON object and the container ID
+renderStatus(jsonObject, "current-status");
 prettifyAndRenderJSON(jsonObject, "json-container");
 renderWAVTracks(jsonObject, "wav-tracks");
 
-function renderJSON(jsonObj, containerId) {
-    var container = document.getElementById(containerId);
-    var jsonString = JSON.stringify(jsonObj, null, 8); // The third parameter (2) is for indentation
-    var preElement = document.createElement("pre");
-    preElement.textContent = jsonString;
-    container.appendChild(preElement);
-}
+//function renderJSON(jsonObj, containerId) {
+//    var container = document.getElementById(containerId);
+//    var jsonString = JSON.stringify(jsonObj, null, 8); // The third parameter (2) is for indentation
+//    var preElement = document.createElement("pre");
+//    preElement.textContent = jsonString;
+//    container.appendChild(preElement);
+//}
 //renderJSON(jsonObject, "json-container");
 </script>
+
+
+
 </body>
 </html>
 ]]
@@ -261,7 +292,7 @@ function renderJSON(jsonObj, containerId) {
 function creamWebStatusHandler:get()
 	CREAM:update()
 	local currentState = responseHTML_A .. 
-				cjson.encode({app = {recording = creamRuns, name = APP_NAME, version = CREAM_APP_VERSION, edit = CREAM.edit, io = { CREAM.devices.online } } }) .. 
+				cjson.encode({app = {recording = creamRuns, name = APP_NAME, version = config.CREAM_APP_VERSION, edit = CREAM.edit, io = { CREAM.devices.online } } }) .. 
 			responseHTML_B 
 	self:write(currentState)
 	self:finish()
@@ -317,6 +348,19 @@ local function execute_long_running_command(command, callback)
     end)
 end
 
+function creamWebPlayHandler:get()
+   	local command = "arecord -vvv -f cd -t wav " .. config.CREAM_ARCHIVE_DIRECTORY .. "/" 
+													.. CREAM.edit.current_recording .. " -d 0 2>&1 "
+
+	creamRuns = true
+
+   	execute_long_running_command(command, function(result)
+   	end)
+
+	self:write("Started Recording " .. CREAM.edit.current_recording .. 
+			" ... <script>location.href = '/status';</script>")
+end
+
 function creamWebStopHandler:get()
 	local command = "killall arecord"
 	creamRuns = false
@@ -335,7 +379,7 @@ function creamWebStartHandler:get()
 	else
 
   	CREAM.edit.current_recording = os.date('%Y-%m-%d@%H:%M:%S.') .. string.match(tostring(os.clock()), "%d%.(%d+)") .. ".wav"
-   	local command = "arecord -vvv -f cd -t wav " .. CREAM_ARCHIVE_DIRECTORY .. "/" 
+   	local command = "arecord -vvv -f cd -t wav " .. config.CREAM_ARCHIVE_DIRECTORY .. "/" 
 													.. CREAM.edit.current_recording .. " -d 0 2>&1 "
 
 	creamRuns = true
@@ -361,7 +405,7 @@ end
 function creamWavHandler:get(wavFile)
 
 
-	local wavFilePath = CREAM_ARCHIVE_DIRECTORY .. wavFile
+	local wavFilePath = config.CREAM_ARCHIVE_DIRECTORY .. wavFile
 
 	cLOG(syslog.LOG_INFO, "wavFilePath " .. wavFilePath)
     local file = io.open(wavFilePath, "rb")
@@ -382,22 +426,21 @@ function creamWavHandler:get(wavFile)
 end
 
 
-
-
 local creamWebApp = turbo.web.Application:new({
 {"/status", creamWebStatusHandler},
-{"/stop", creamWebStopHandler},
 {"/start", creamWebStartHandler},
+{"/stop", creamWebStopHandler},
+{"/play", creamWebPlayHandler},
 {"/recordStart", creamWebRecordStartHandler},
 {"/recordStop", creamWebRecordStopHandler},
 {"^/$", turbo.web.StaticFileHandler, "./html/index.html"},
---{"^/static/(.*)$", turbo.web.StaticFileHandler, CREAM_ARCHIVE_DIRECTORY },
+--{"^/static/(.*)$", turbo.web.StaticFileHandler, config.CREAM_ARCHIVE_DIRECTORY },
 {"^/static/(.*)$", creamWavHandler},
 })
 
 CREAM:init()
 
-creamWebApp:listen(CREAM_APP_SERVER_PORT)
+creamWebApp:listen(config.CREAM_APP_SERVER_PORT)
 
 creamCOMMAND = nil
 
@@ -420,11 +463,11 @@ function creamMain()
 
 	end
 
-	turbo.ioloop.instance():add_timeout(turbo.util.gettimemonotonic() + CREAM_COMMAND_INTERVAL, creamMain)
+	turbo.ioloop.instance():add_timeout(turbo.util.gettimemonotonic() + config.CREAM_COMMAND_INTERVAL, creamMain)
 
 end
 
-turbo.ioloop.instance():add_timeout(turbo.util.gettimemonotonic() + CREAM_COMMAND_INTERVAL, creamMain)
+turbo.ioloop.instance():add_timeout(turbo.util.gettimemonotonic() + config.CREAM_COMMAND_INTERVAL, creamMain)
 
 turbo.ioloop.instance():start()
 

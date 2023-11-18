@@ -1,8 +1,9 @@
 
-require ("config")
 require ("util/environment_debug")
 require ("util/lua_enumerable")
 require ("util/filesystem")
+
+config = require ("config")
 
 dateparse =  require("util/dateparse")
 
@@ -19,7 +20,7 @@ function _M:init()
 end
 
 function _M:updateWAVlist()
-	_M.edit.Clips = scandirForWAV(CREAM_ARCHIVE_DIRECTORY)
+	_M.edit.Clips = scandirForWAV(config.CREAM_ARCHIVE_DIRECTORY)
 	_M.edit.Tracks = {}
 	for i,v in ipairs(_M.edit.Clips) do
 		table.insert(_M.edit.Tracks, v)
