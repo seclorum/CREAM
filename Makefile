@@ -6,17 +6,17 @@ LUA_SRC_FILES = ./main.lua ./config.lua ./cream.lua ./buildDate.lua ./mixer.lua 
 
 ifeq ($(BUILD_ARCHITECTURE), armv7l)
 ${CREAM_APP_TARGET}:
-	~/.luarocks/bin/luastatic ${LUA_SRC_FILES} /usr/lib/arm-linux-gnueabihf/libluajit-5.1.a /usr/lib/arm-linux-gnueabihf/liblua5.1-cjson.a -I/usr/include/lua5.1  "-o ${CREAM_APP_TARGET}"
+	dist/local/bin/luastatic ${LUA_SRC_FILES} /usr/lib/arm-linux-gnueabihf/libluajit-5.1.a /usr/lib/arm-linux-gnueabihf/liblua5.1-cjson.a -I/usr/include/lua5.1  "-o ${CREAM_APP_TARGET}"
 endif
 
 ifeq ($(BUILD_ARCHITECTURE), armv6l)
 ${CREAM_APP_TARGET}:
-	~/.luarocks/bin/luastatic ${LUA_SRC_FILES} /usr/lib/arm-linux-gnueabihf/libluajit-5.1.a /usr/lib/arm-linux-gnueabihf/liblua5.1-cjson.a -I/usr/include/lua5.1  "-o ${CREAM_APP_TARGET}"
+	dist/local/bin/luastatic ${LUA_SRC_FILES} /usr/lib/arm-linux-gnueabihf/libluajit-5.1.a /usr/lib/arm-linux-gnueabihf/liblua5.1-cjson.a -I/usr/include/lua5.1  "-o ${CREAM_APP_TARGET}"
 endif
 
 ifeq ($(BUILD_ARCHITECTURE), x86_64)
 ${CREAM_APP_TARGET}:
-	~/.luarocks/bin/luastatic ${LUA_SRC_FILES} /usr/lib/x86_64-linux-gnu/libluajit-5.1.a /usr/lib/x86_64-linux-gnu/liblua5.1-cjson.a -I/usr/include/lua5.1  "-o ${CREAM_APP_TARGET}"
+	dist/local/bin/luastatic ${LUA_SRC_FILES} /usr/lib/x86_64-linux-gnu/libluajit-5.1.a /usr/lib/x86_64-linux-gnu/liblua5.1-cjson.a -I/usr/include/lua5.1  "-o ${CREAM_APP_TARGET}"
 endif
 
 builddate:
@@ -36,20 +36,17 @@ reqs:
 	sudo apt-get install -y luajit luarocks git build-essential libssl-dev libluajit-5.1-dev lua-cjson-dev
 	echo "Luarocks dependencies:"
 
-reqs-luarock:
-	#luarocks install turbo --local
-	luarocks install ljsyscall --local
-	luarocks install ffi --local
-	luarocks install cffi --local
-	luarocks install cffi-lua --local
-	luarocks install penlight-ffi --local
-	luarocks install lgi --local
-	luarocks install libtffi --local
-	luarocks install luajit-ffi-loader --local
-	luarocks install luaposix --local
-	luarocks install lua-atomic --local
-	luarocks install luastatic --local
-	luarocks path
+reqs-lua:
+	#luarocks install turbo 
+	#luarocks install ffi --tree=dist/aa-cream_1.0-1/opt/austrianAudio/
+	#luarocks install cffi --tree=dist/aa-cream_1.0-1/opt/austrianAudio/
+	luarocks install ljsyscall --tree=dist/aa-cream_1.0-1/opt/austrianAudio/
+	luarocks install cffi-lua --tree=dist/aa-cream_1.0-1/opt/austrianAudio/
+	luarocks install lgi --tree=dist/aa-cream_1.0-1/opt/austrianAudio/
+	luarocks install luajit-ffi-loader --tree=dist/aa-cream_1.0-1/opt/austrianAudio/
+	luarocks install luaposix --tree=dist/aa-cream_1.0-1/opt/austrianAudio/
+	luarocks install luastatic --tree=dist/local
+	luarocks path --tree=dist/aa-cream_1.0-1/opt/austrianAudio/
 
 trace:	./cream.armv7l
 	strace -r -s 1024 -o /opt/austrianAudio/var/CREAM/`date +"%Y%m%d-%H%M%S"`-app_strace.log.txt ./cream.armv7l
@@ -60,5 +57,6 @@ dist:	${CREAM_APP_TARGET}
 	ls -alF dist/*.deb
 
 clean:
+	make -C dist/ clean
 	rm -rf *.luastatic.c cream ${CREAM_APP_TARGET} ${CREAM_DIST_INST_DIR}/${CREAM_APP_TARGET}
  
