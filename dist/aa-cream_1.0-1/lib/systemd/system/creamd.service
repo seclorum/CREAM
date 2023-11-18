@@ -10,8 +10,8 @@ KillMode=control-group
 Restart=on-failure
 RestartPreventExitStatus=255
 Type=forking
-RuntimeDirectory=CREAM
-RuntimeDirectoryMode=0755
+CacheDirectory=CREAM
+User=root
 
 [Install]
 WantedBy=multi-user.target
