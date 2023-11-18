@@ -2,6 +2,8 @@
 HOST_ARCHITECTURE=`uname -m`
 CREAM_DAEMON_BIN=/opt/austrianAudio/bin/cream.$HOST_ARCHITECTURE
 
+eval `luarocks path --tree=/opt/austrianAudio/lib`
+
 mkdir -p /opt/austrianAudio/var/CREAM/
 
 if [ ! -f $CREAM_DAEMON_BIN ] ;
