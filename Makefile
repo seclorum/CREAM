@@ -6,10 +6,10 @@ LUA_SRC_FILES = ./main.lua ./config.lua ./cream.lua ./buildDate.lua ./mixer.lua 
 
 ifeq ($(BUILD_ARCHITECTURE), armv7l)
 ${CREAM_APP_TARGET}:
-	luastatic ${LUA_SRC_FILES} /usr/lib/arm-linux-gnueabihf/libluajit-5.1.a /usr/lib/arm-linux-gnueabihf/liblua5.1-cjson.a -I/usr/include/lua5.1  "-o ${CREAM_APP_TARGET}"
+	~/.luarocks/bin/luastatic ${LUA_SRC_FILES} /usr/lib/arm-linux-gnueabihf/libluajit-5.1.a /usr/lib/arm-linux-gnueabihf/liblua5.1-cjson.a -I/usr/include/lua5.1  "-o ${CREAM_APP_TARGET}"
 else
 ${CREAM_APP_TARGET}:
-	luastatic ${LUA_SRC_FILES} /usr/lib/x86_64-linux-gnu/libluajit-5.1.a /usr/lib/x86_64-linux-gnu/liblua5.1-cjson.a -I/usr/include/lua5.1  "-o ${CREAM_APP_TARGET}"
+	~/.luarocks/bin/luastatic ${LUA_SRC_FILES} /usr/lib/x86_64-linux-gnu/libluajit-5.1.a /usr/lib/x86_64-linux-gnu/liblua5.1-cjson.a -I/usr/include/lua5.1  "-o ${CREAM_APP_TARGET}"
 endif
 
 builddate:
