@@ -53,3 +53,4 @@ dist/local/**
 dist/aa-cream_1.0-1/opt/austrianAudio/lib/**
 dist/aa-cream_1.0-1/opt/austrianAudio/share/**
 dist/aa-cream_1.0-1/opt/austrianAudio/bin/turbovisor
+dist/aa-cream_1.0-1*.deb
