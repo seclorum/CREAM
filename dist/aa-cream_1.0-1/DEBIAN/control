@@ -1,0 +1,10 @@
+Package: CREAM
+Version: 1.0-1
+Section: base
+Priority: optional
+Architecture: all
+Pre-Depends: libcjson1 (>= 1.7.10), libluajit-5.1-2 (>= 2.1), libluajit-5.1-common, lua-cjson (>= 2.1.0), lua5.1 (>=5.1.5)
+Maintainer: Jay Vaughan <jay.vaughan@austrianaudio.com>
+Description: Constant Recording Easy Access to Media
+ Provides constant recording capabilities from any onboard USB microphone
+ and an easy-to-access library of media created by the user.

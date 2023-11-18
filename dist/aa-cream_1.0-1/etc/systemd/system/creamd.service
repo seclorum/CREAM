@@ -1,0 +1,19 @@
+[Unit]
+Description=Constant Recording Easy Access to Media
+After=network.target
+
+[Service]
+ExecStart=/opt/austrianAudio/bin/cream start
+ExecReload=/opt/austrianAudio/bin/cream restart
+ExecStop=/opt/austrianAudio/bin/cream stop
+KillMode=control-group
+Restart=on-failure
+RestartPreventExitStatus=255
+Type=notify
+RuntimeDirectory=CREAM
+RuntimeDirectoryMode=0755
+
+[Install]
+WantedBy=multi-user.target
+Alias=creamd.service
+

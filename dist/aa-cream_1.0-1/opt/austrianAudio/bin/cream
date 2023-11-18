@@ -1,0 +1,33 @@
+#!/bin/bash
+HOST_ARCHITECTURE=`uname -m`
+CREAM_DAEMON_BIN=/opt/austrianAudio/bin/cream.$HOST_ARCHITECTURE
+
+mkdir -p /opt/austrianAudio/var/CREAM/
+
+if [ ! -f $CREAM_DAEMON_BIN ] ;
+then
+	echo "$CREAM_DAEMON_BIN not installed - aborting!"
+	exit 0
+fi
+
+start_cream() {
+	echo "Starting CREAM device services daemon at $CREAM_DAEMON_BIN"
+	$CREAM_DAEMON_BIN >> /opt/austrianAudio/var/CREAM/cream.log 2>&1 &
+}
+
+stop_cream() {
+	echo "Stopping CREAM device services daemon and application"
+	kill -STOP `pidof cream.$HOST_ARCHITECTURE`
+	kill -9 `pidof cream.$HOST_ARCHITECTURE`
+}
+
+case "$1" in
+    start)   start_cream;;
+    stop)    stop_cream;;
+    restart) stop_cream; start_cream;;
+    *) echo "usage: $0 start|stop|restart" >&2
+       exit 1
+       ;;
+esac
+
+exit 0
