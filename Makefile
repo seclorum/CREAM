@@ -42,7 +42,7 @@ reqs-lua:
 	#luarocks install cffi --tree=dist/aa-cream_1.0-1/opt/austrianAudio/
 	luarocks install ljsyscall --tree=dist/aa-cream_1.0-1/opt/austrianAudio/
 	luarocks install cffi-lua --tree=dist/aa-cream_1.0-1/opt/austrianAudio/
-	luarocks install lgi --tree=dist/aa-cream_1.0-1/opt/austrianAudio/
+	#luarocks install lgi --tree=dist/aa-cream_1.0-1/opt/austrianAudio/
 	luarocks install luajit-ffi-loader --tree=dist/aa-cream_1.0-1/opt/austrianAudio/
 	luarocks install luaposix --tree=dist/aa-cream_1.0-1/opt/austrianAudio/
 	luarocks install luastatic --tree=dist/local
