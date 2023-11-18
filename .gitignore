@@ -49,3 +49,4 @@ dist/aa-cream_1.0-1/opt/austrianAudio/bin/cream.armv7l
 dist/aa-cream_1.0-1/opt/austrianAudio/bin/cream.armv6l
 main.luastatic.c
 dist/aa-cream_1.0-1.deb
+dist/local/bin/**
