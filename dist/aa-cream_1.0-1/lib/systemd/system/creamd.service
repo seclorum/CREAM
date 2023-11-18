@@ -11,6 +11,7 @@ Restart=on-failure
 RestartPreventExitStatus=255
 Type=forking
 CacheDirectory=CREAM
+ReadWritePaths=/opt/austrianAudio/var/CREAM/
 User=root
 
 [Install]
