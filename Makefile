@@ -36,6 +36,9 @@ reqs:
 	sudo apt-get install -y luajit luarocks git build-essential libssl-dev libluajit-5.1-dev lua-cjson-dev sysv-rc-conf meson
 	echo "Luarocks dependencies:"
 
+reqs-turbo:
+	PREFIX=dist/aa-cream_1.0-1/opt/austrianAudio/ make -C third/turbo install
+
 reqs-lua:
 	#luarocks install turbo 
 	#luarocks install ffi --tree=dist/aa-cream_1.0-1/opt/austrianAudio/
