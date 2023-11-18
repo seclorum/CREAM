@@ -50,3 +50,5 @@ dist/aa-cream_1.0-1/opt/austrianAudio/bin/cream.armv6l
 main.luastatic.c
 dist/aa-cream_1.0-1.deb
 dist/local/bin/**
+dist/aa-cream_1.0-1/opt/austrianAudio/lib/**
+dist/aa-cream_1.0-1/opt/austrianAudio/share/**
