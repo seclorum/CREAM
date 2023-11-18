@@ -42,3 +42,8 @@ luac.out
 *.x86_64
 *.hex
 
+# Build Products
+cream.armv7l
+dist/aa-cream_1.0-1.deb
+dist/aa-cream_1.0-1/opt/austrianAudio/bin/cream.armv7l
+main.luastatic.c
