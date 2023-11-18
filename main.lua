@@ -32,7 +32,7 @@ cSTACK:append(function()
 	config.dump()
 	syslog.setlogmask(LOG_DEBUG)
 	syslog.openlog(config.APP_NAME, LOG_SYSLOG)
-	cLOG(syslog.LOG_INFO, config.APP_NAME .. " starts with protocol version " .. config.CREAM_PROTOCOL_VERSION .. " on " .. config.CREAM_APP_SERVER_HOST .. ":" .. config.CREAM_APP_SERVER_PORT)
+	cLOG(syslog.LOG_INFO, config.APP_NAME .. " running on host: " .. syscall.gethostname() .. " protocol version " .. config.CREAM_PROTOCOL_VERSION .. " on " .. config.CREAM_APP_SERVER_HOST .. ":" .. config.CREAM_APP_SERVER_PORT)
 	cLOG(syslog.LOG_INFO, config.CREAM_APP_VERSION)
 
  	CREAM.devices:init()
@@ -156,7 +156,20 @@ function toggleContent() {
 		content.style.display = "none";
 	}
 }
- 
+  
+function generateBackgroundColor(str) {
+  let hashCode = 0;
+  for (let i = 0; i < str.length; i++) {
+    hashCode = str.charCodeAt(i) + ((hashCode << 5) - hashCode);
+  }
+
+  const r = (hashCode & 0xFF0000) >> 16;
+  const g = (hashCode & 0x00FF00) >> 8;
+  const b = hashCode & 0x0000FF;
+
+  return `rgb(${r},${g},${b})`;
+}
+
 var jsonObject = ]]
 
 local responseHTML_B = [[;
@@ -250,9 +263,9 @@ function renderStatus(jsonObj, containerId) {
     var headerCell = headerRow.insertCell(0);
 	
 	if (CurrentRecording) {
-    	headerCell.innerHTML = '<li>RECORDING:<pre>' + CurrentRecording + '</li>'; 
+    	headerCell.innerHTML = '<li>' + jsonObj.hostname + ' :: RECORDING:<pre>' + CurrentRecording + '</li>'; 
 	} else {
-    	headerCell.innerHTML = '<li>Not Currently Recording.</li>'; 
+    	headerCell.innerHTML = '<li>' + jsonObj.hostname + ' :: Not Currently Recording.</li>'; 
 	}
 
 	container.appendChild(statusTable);
@@ -267,7 +280,7 @@ function openLink(fileName) {
 }
 
 
-// Call the prettifyAndRenderJSON function with your JSON object and the container ID
+document.body.style.backgroundColor = generateBackgroundColor(jsonObject.hostname);
 renderStatus(jsonObject, "current-status");
 prettifyAndRenderJSON(jsonObject, "json-container");
 renderWAVTracks(jsonObject, "wav-tracks");
@@ -290,9 +303,10 @@ renderWAVTracks(jsonObject, "wav-tracks");
 
 
 function creamWebStatusHandler:get()
+	local hostName = syscall.gethostname()
 	CREAM:update()
 	local currentState = responseHTML_A .. 
-				cjson.encode({app = {recording = creamRuns, name = APP_NAME, version = config.CREAM_APP_VERSION, edit = CREAM.edit, io = { CREAM.devices.online } } }) .. 
+				cjson.encode({ hostname = hostName, app = {recording = creamRuns, name = APP_NAME, version = config.CREAM_APP_VERSION, edit = CREAM.edit, io = { CREAM.devices.online } } }) .. 
 			responseHTML_B 
 	self:write(currentState)
 	self:finish()
