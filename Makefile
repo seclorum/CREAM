@@ -37,7 +37,7 @@ reqs:
 	echo "Luarocks dependencies:"
 
 reqs-turbo:
-	PREFIX=dist/aa-cream_1.0-1/opt/austrianAudio/ make -C third/turbo install
+	PREFIX=`pwd`/dist/aa-cream_1.0-1/opt/austrianAudio/ make -C third/turbo install
 
 reqs-lua:
 	#luarocks install turbo 
