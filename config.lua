@@ -9,7 +9,7 @@ _M.CREAM_APP_SERVER_HOST = "localhost"
 _M.CREAM_APP_SERVER_PORT = arg[1] or 8081
 _M.CREAM_APP_VERSION = "{\"Version\":\"1.0\", buildDate: \"" .. require("buildDate") .. "\"}"
 
-_M.CREAM_ARCHIVE_DIRECTORY = "/home/ibi/CREAM/"
+_M.CREAM_ARCHIVE_DIRECTORY = "/opt/austrianAudio/var/CREAM/"
 
 _M.CREAM_HOST = "localhost"
 _M.CREAM_COMMAND_PORT = arg[2] or 8080
