@@ -29,6 +29,7 @@ end
 cSTACK = turbo.structs.deque:new()
 
 cSTACK:append(function()
+	local hostName = syscall.gethostname()
 	config.dump()
 	syslog.setlogmask(LOG_DEBUG)
 	syslog.openlog(config.APP_NAME, LOG_SYSLOG)
@@ -80,7 +81,7 @@ local responseHTML_A = [[
 		}
 
 		h1, h2, h3, h4, h5, h6 {
-  			color: #59A0F9; /* Blue heading colors */
+  			color: #999999; /* Black heading colors */
 		}
 
 		a {
@@ -106,10 +107,10 @@ local responseHTML_A = [[
         }
 
         .string {
-            color: green;
+            color: black;
         }
         .number {
-            color: darkorange;
+            color: orange;
         }
         .key {
             color: blue;
@@ -122,12 +123,12 @@ local responseHTML_A = [[
             color: gray;
         }
         .link {
-            color: #0066cc; /* Blue color for links */
+            color: #999999; /* Black color for links */
             text-decoration: underline;
             cursor: pointer;
         }
 		.highlight {
-			background-color: yellow;
+			background-color: orange;
 		}
 
     </style>
@@ -263,10 +264,10 @@ function renderStatus(jsonObj, containerId) {
     var headerCell = headerRow.insertCell(0);
 	
 	if (CurrentRecording) {
-    	headerCell.innerHTML = '<li>' + jsonObj.hostname + ' :: RECORDING:<pre>' + CurrentRecording + '</li>'; 
+    	headerCell.innerHTML = '<li><b>' + jsonObj.hostname + ' :: RECORDING:</b><pre>' + CurrentRecording + '</li>'; 
 	} else {
-    	headerCell.innerHTML = '<li>' + jsonObj.hostname + ' :: Not Currently Recording.</li>'; 
-	}
+    	headerCell.innerHTML = '<li><b>' + jsonObj.hostname + ' :: </b>Not Currently Recording.</li>'; 
+	}                                 
 
 	container.appendChild(statusTable);
  
@@ -280,7 +281,7 @@ function openLink(fileName) {
 }
 
 
-document.body.style.backgroundColor = generateBackgroundColor(jsonObject.hostname);
+// document.body.style.backgroundColor = generateBackgroundColor(jsonObject.hostname);
 renderStatus(jsonObject, "current-status");
 prettifyAndRenderJSON(jsonObject, "json-container");
 renderWAVTracks(jsonObject, "wav-tracks");
