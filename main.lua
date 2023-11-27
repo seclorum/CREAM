@@ -60,7 +60,7 @@ local responseHTML_A = [[
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>cream audio broker - current state</title>
+    <title>cream::</title>
     <style>
     body {
     	font-family: 'Courier New', monospace; /* Use a monospaced font */
@@ -73,7 +73,7 @@ local responseHTML_A = [[
     }
 
     a {
-    	color: #2ecc71; /* Green link color */
+    	color: #black;
     }
 
     #json-container {
@@ -142,31 +142,30 @@ local responseHTML_A = [[
       color: #333;
     }
 
-    .start {
+    .stop {
       background-color: #4CAF50; /* Green */
       border-color: #4CAF50;
     }
 
-    .stop {
+    .start {
       background-color: #f44336; /* Red */
       border-color: #f44336;
     }
-
 
     </style>
 </head>
 <body>
 
-<div class="control-surface" id="function-menu>
-<div class="recording-button start"><a href="/start">START Recording</a></div>
-<div class="recording-button stop"><a href="/stop">STOP Recording</a></div>
-</div>
-
 <div id="current-status"></div>
+
+<div class="control-surface">
+<div class="recording-button start"><a href="/start">START RECORDING</a></div>
+<div class="recording-button stop"><a href="/stop">STOP RECORDING</a></div>
+</div>
 
 <div id="wav-tracks"></div>
 
-<div class="collapsible" onClick="toggleContent()">json
+<div class="collapsible" onClick="toggleContent()">::debug::
 <div id="json-container"></div>
 </div>
 
@@ -248,12 +247,10 @@ function renderWAVTracks(jsonObj, containerId) {
 		var sortedTracks = Tracks.sort();
 
         var wavTable = document.createElement("table");
-        wavTable.border = "1";
+        wavTable.border = "0";
 
         // Create wavTable header
         var headerRow = wavTable.insertRow(0);
-        var headerCell = headerRow.insertCell(0);
-        headerCell.innerHTML = "Wav Files";
 
         // Create wavTable rows with links
         for (var i = 0; i < sortedTracks.length; i++) {
@@ -277,19 +274,21 @@ function renderWAVTracks(jsonObj, containerId) {
 }
 
 function renderStatus(jsonObj, containerId) {
+    var currentRecording = jsonObj.app.edit.current_recording;
     var container = document.getElementById(containerId);
-	var CurrentRecording = jsonObj.app.edit.current_recording;
     var statusTable = document.createElement("table");
-    statusTable.border = "1";
+    statusTable.border = "0";
+
+    document.title = 'CREAM::' + jsonObj.hostname;
 
     // Create wavTable header
     var headerRow = statusTable.insertRow(0);
     var headerCell = headerRow.insertCell(0);
 	
-	if (CurrentRecording) {
-    	headerCell.innerHTML = '<li><b>' + jsonObj.hostname + ' :: RECORDING:</b><pre>' + CurrentRecording + '</li>'; 
+	if (currentRecording) {
+    		headerCell.innerHTML = '<h1>' + jsonObj.hostname + '</h1> <b>:: RECORDING:</b><pre>' + currentRecording + '</pre>'; 
 	} else {
-    	headerCell.innerHTML = '<li><b>' + jsonObj.hostname + ' :: </b>Not Currently Recording.</li>'; 
+    		headerCell.innerHTML = '<h1>' + jsonObj.hostname + '</h1> <b>:: </b>Not Currently Recording.'; 
 	}                                 
 
 	container.appendChild(statusTable);
