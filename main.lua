@@ -62,81 +62,104 @@ local responseHTML_A = [[
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>cream audio broker - current state</title>
     <style>
-		body {
-  			font-family: 'Courier New', monospace; /* Use a monospaced font */
-  			background-color: #1b2a3f; /* Grey-blue background color */
-  			color: #6A9Ddb; /* Blue text color */
-		}
+    body {
+    	font-family: 'Courier New', monospace; /* Use a monospaced font */
+    	background-color: #1b2a3f; /* Grey-blue background color */
+    	color: #6A9Ddb; /* Blue text color */
+    }
 
-		div.ex1 {
-		  width: 500px;
-		  margin: auto;
-		  border: 3px solid #73AD21;
-		}
-		
-		div.ex2 {
-		  max-width: 500px;
-		  margin: auto;
-		  border: 3px solid #73AD21;
-		}
+    h1, h2, h3, h4, h5, h6 {
+    	color: #999999; /* Black heading colors */
+    }
 
-		h1, h2, h3, h4, h5, h6 {
-  			color: #999999; /* Black heading colors */
-		}
+    a {
+    	color: #2ecc71; /* Green link color */
+    }
 
-		a {
-  			color: #2ecc71; /* Green link color */
-		}
+    #json-container {
+    	font-family: 'Courier New', Courier, monospace;
+    	white-space: pre-wrap;
+    	background-color: #f9f9f9;
+    	display: none;
+    	padding: 0 18px;
+    	overflow: hidden;
+    	border: 1px solid #ddd;
+    }
 
-        #json-container {
-            font-family: 'Courier New', Courier, monospace;
-            white-space: pre-wrap;
-            background-color: #f9f9f9;
-            display: none;
-            padding: 0 18px;
-            overflow: hidden;
-            border: 1px solid #ddd;
-        }
+    .collapsible {
+    	cursor: pointer;
+    	padding: 18px;
+    	text-align: left;
+    	border: 1px solid #ddd;
+    	margin-bottom: 16px;
+    }
 
-        .collapsible {
-            cursor: pointer;
-            padding: 18px;
-            text-align: left;
-            border: 1px solid #ddd;
-            margin-bottom: 16px;
-        }
+    .string {
+    	color: black;
+    }
+    .number {
+    	color: orange;
+    }
+    .key {
+    	color: blue;
+    	font-weight: bold;
+    }
+    .boolean {
+    	color: brown;
+    }
+    .null {
+    	color: gray;
+    }
+    .link {
+    	color: #999999; /* Black color for links */
+    	text-decoration: underline;
+    	cursor: pointer;
+    }
+    .highlight {
+    	background-color: orange;
+    }
 
-        .string {
-            color: black;
-        }
-        .number {
-            color: orange;
-        }
-        .key {
-            color: blue;
-			font-weight: bold;
-        }
-        .boolean {
-            color: brown;
-        }
-        .null {
-            color: gray;
-        }
-        .link {
-            color: #999999; /* Black color for links */
-            text-decoration: underline;
-            cursor: pointer;
-        }
-		.highlight {
-			background-color: orange;
-		}
+    .control-surface {
+      display: flex;
+    }
+
+    .recording-button {
+      padding: 10px 20px;
+      margin: 10px;
+      font-size: 18px;
+      text-align: center;
+      text-transform: uppercase;
+      cursor: pointer;
+      border: 2px solid #fff;
+      border-radius: 5px;
+      background-color: #444;
+      color: #fff;
+      transition: background-color 0.3s, border-color 0.3s, color 0.3s;
+    }
+
+    .recording-button:hover {
+      background-color: #fff;
+      color: #333;
+    }
+
+    .start {
+      background-color: #4CAF50; /* Green */
+      border-color: #4CAF50;
+    }
+
+    .stop {
+      background-color: #f44336; /* Red */
+      border-color: #f44336;
+    }
+
 
     </style>
 </head>
 <body>
-<div id="function-menu">
-<a href="/start">START Recording</a>
-<a href="/stop">STOP Recording</a>
+
+<div class="control-surface" id="function-menu>
+<div class="recording-button start"><a href="/start">START Recording</a></div>
+<div class="recording-button stop"><a href="/stop">STOP Recording</a></div>
 </div>
 
 <div id="current-status"></div>
@@ -144,7 +167,7 @@ local responseHTML_A = [[
 <div id="wav-tracks"></div>
 
 <div class="collapsible" onClick="toggleContent()">json
-	<div id="json-container"></div>
+<div id="json-container"></div>
 </div>
 
 
