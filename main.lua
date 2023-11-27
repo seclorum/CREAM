@@ -68,16 +68,18 @@ local responseHTML_A = [[
   			color: #6A9Ddb; /* Blue text color */
 		}
 
-		div.ex1 {
-		  width: 500px;
-		  margin: auto;
-		  border: 3px solid #73AD21;
-		}
-		
-		div.ex2 {
+		#stop-recording {
 		  max-width: 500px;
 		  margin: auto;
+  		  background-color: #1b2a3f; /* Grey-blue background color */
 		  border: 3px solid #73AD21;
+		}
+
+		#start-recording {
+		  max-width: 500px;
+		  margin: auto;
+  		  background-color: red;
+		  border: 4px solid #73AD21;
 		}
 
 		h1, h2, h3, h4, h5, h6 {
@@ -135,8 +137,8 @@ local responseHTML_A = [[
 </head>
 <body>
 <div id="function-menu">
-<a href="/start">START Recording</a>
-<a href="/stop">STOP Recording</a>
+<div id="start-recording"><a href="/start">START Recording</a></div>
+<div id="stop-recordig"><a href="/stop">STOP Recording</a></div>
 </div>
 
 <div id="current-status"></div>
@@ -364,8 +366,7 @@ local function execute_long_running_command(command, callback)
 end
 
 function creamWebPlayHandler:get()
-   	local command = "arecord -vvv -f cd -t wav " .. config.CREAM_ARCHIVE_DIRECTORY .. "/" 
-													.. CREAM.edit.current_recording .. " -d 0 2>&1 "
+   	local command = "aplay -vvv " .. config.CREAM_ARCHIVE_DIRECTORY .. "/" .. CREAM.edit.current_recording .. " -d 0 2>&1 "
 
 	creamRuns = true
 
