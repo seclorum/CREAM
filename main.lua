@@ -10,7 +10,18 @@ local signal = require "posix.signal"
 local cjson = require "cjson"
 local syscall = require "syscall"
 
-local creamRuns = false
+local creamIsRecording = false
+local creamIsPlaying = false
+local creamIsSynchronizing = false
+
+-- !J! for the demo
+if (syscall.gethostname() == "mix-o") then
+	config.CREAM_SYNC_PARTNER = "mix-j"
+end
+if (syscall.gethostname() == "mix-j") then
+	config.CREAM_SYNC_PARTNER = "mix-o"
+end
+
 
 io.stdout:setvbuf("no")
 
@@ -36,7 +47,7 @@ cSTACK:append(function()
 	cLOG(syslog.LOG_INFO, config.APP_NAME .. " running on host: " .. syscall.gethostname() .. " protocol version " .. config.CREAM_PROTOCOL_VERSION .. " on " .. config.CREAM_APP_SERVER_HOST .. ":" .. config.CREAM_APP_SERVER_PORT)
 	cLOG(syslog.LOG_INFO, config.CREAM_APP_VERSION)
 
- 	CREAM.devices:init()
+	CREAM.devices:init()
 	--CREAM.mixer:init()
 	--CREAM.devices:sync()
 	CREAM.devices:dump()
@@ -47,7 +58,9 @@ end)
 -- cream Web Handlers
 local creamWebStatusHandler = class("creamWebStatusHandler", turbo.web.RequestHandler)
 local creamWebStopHandler = class("creamWebStopHandler", turbo.web.RequestHandler)
+local creamWebEmptyHandler = class("creamWebEmptyHandler", turbo.web.RequestHandler)
 local creamWebPlayHandler = class("creamWebPlayHandler", turbo.web.RequestHandler)
+local creamWebSynchronizeHandler = class("creamWebSynchronizeHandler", turbo.web.RequestHandler)
 local creamWebStartHandler = class("creamWebStartHandler", turbo.web.RequestHandler)
 local creamWebRecordStartHandler = class("creamWebRecordStartHandler", turbo.web.RequestHandler)
 local creamWebRecordStopHandler = class("creamWebRecordStopHandler", turbo.web.RequestHandler)
@@ -63,67 +76,67 @@ local responseHTML_A = [[
     <title>cream::</title>
     <style>
     body {
-    	font-family: 'Courier New', monospace; /* Use a monospaced font */
-    	background-color: #1b2a3f; /* Grey-blue background color */
-    	color: #6A9Ddb; /* Blue text color */
+		font-family: 'Courier New', monospace; /* Use a monospaced font */
+		background-color: #1b2a3f; /* Grey-blue background color */
+		color: #6A9Ddb; /* Blue text color */
     }
 
     h1, h2, h3, h4, h5, h6 {
-    	color: #999999; /* Black heading colors */
+		color: #999999; /* Black heading colors */
     }
 
-    a {
-    	color: #black;
+    a:link, a:visited  {
+		color: #black;
     }
 
     #json-container {
-    	font-family: 'Courier New', Courier, monospace;
-    	white-space: pre-wrap;
-    	background-color: #f9f9f9;
-    	display: none;
-    	padding: 0 18px;
-    	overflow: hidden;
-    	border: 1px solid #ddd;
+		font-family: 'Courier New', Courier, monospace;
+		white-space: pre-wrap;
+		background-color: #f9f9f9;
+		display: none;
+		padding: 0 18px;
+		overflow: hidden;
+		border: 1px solid #ddd;
     }
 
     .collapsible {
-    	cursor: pointer;
-    	padding: 18px;
-    	text-align: left;
-    	border: 1px solid #ddd;
-    	margin-bottom: 16px;
+		cursor: pointer;
+		padding: 18px;
+		text-align: left;
+		border: 1px solid #ddd;
+		margin-bottom: 16px;
     }
 
     .string {
-    	color: black;
+		color: black;
     }
     .number {
-    	color: orange;
+		color: orange;
     }
     .key {
-    	color: blue;
-    	font-weight: bold;
+		color: blue;
+		font-weight: bold;
     }
     .boolean {
-    	color: brown;
+		color: brown;
     }
     .null {
-    	color: gray;
+		color: gray;
     }
     .link {
-    	color: #999999; /* Black color for links */
-    	text-decoration: underline;
-    	cursor: pointer;
+		color: #999999; /* Black color for links */
+		text-decoration: underline;
+		cursor: pointer;
     }
     .highlight {
-    	background-color: orange;
+		background-color: orange;
     }
 
     .control-surface {
       display: flex;
     }
 
-    .recording-button {
+    .interface-button {
       padding: 10px 20px;
       margin: 10px;
       font-size: 18px;
@@ -137,19 +150,29 @@ local responseHTML_A = [[
       transition: background-color 0.3s, border-color 0.3s, color 0.3s;
     }
 
-    .recording-button:hover {
+    .interface-button:hover {
       background-color: #fff;
       color: #333;
     }
 
     .stop {
-      background-color: #4CAF50; /* Green */
+      background-color: #A7F9AB;
       border-color: #4CAF50;
     }
 
     .start {
-      background-color: #f44336; /* Red */
+      background-color: #FBB1AB;
       border-color: #f44336;
+    }
+
+    .empty {
+      background-color: #F9D4B4;
+      border-color: white;
+    }
+
+    .synchronize {
+      background-color: #CBB1FE;
+      border-color: green;
     }
 
     </style>
@@ -158,10 +181,7 @@ local responseHTML_A = [[
 
 <div id="current-status"></div>
 
-<div class="control-surface">
-<div class="recording-button start"><a href="/start">START RECORDING</a></div>
-<div class="recording-button stop"><a href="/stop">STOP RECORDING</a></div>
-</div>
+<div id="control-interface"></div>
 
 <div id="wav-tracks"></div>
 
@@ -258,7 +278,7 @@ function renderWAVTracks(jsonObj, containerId) {
             var row = wavTable.insertRow(0);
             var cell = row.insertCell(0);
 			if (jsonObj.app.edit.current_recording == sortedTracks[i]) {
-	            highlight_style = 'style="background-color: red;"'
+				highlight_style = 'style="background-color: red;"'
 			}
             cell.innerHTML = '<li ' + highlight_style + '>' + 
 								'<a class="link" href="/play/' + sortedTracks[i] + 
@@ -271,6 +291,32 @@ function renderWAVTracks(jsonObj, containerId) {
 
         // Append the wavTable to the container
         container.appendChild(wavTable);
+}
+
+function renderControlInterface(jsonObj, containerId) {
+    var currentRecording = jsonObj.app.edit.current_recording;
+    var container = document.getElementById(containerId);
+    var controlTable = document.createElement("table");
+    controlTable.border = "0";
+    var headerRow = controlTable.insertRow(0);
+    var headerCell = headerRow.insertCell(0);
+
+	headerCell.innerHTML = '<div class="control-surface">'
+
+	if (currentRecording) {
+			headerCell.innerHTML += '<div class="interface-button stop"><a href="/stop">STOP RECORDING</a></div>';
+	} else {
+			headerCell.innerHTML += '<div class="interface-button start"><a href="/start">START RECORDING</a></div>';
+	}                                 
+		
+
+	headerCell.innerHTML += '<div class="interface-button synchronize"><a href="/synchronize">SYNCH ' + jsonObj.partner + '</a></div>';
+	headerCell.innerHTML += '<div class="interface-button empty"><a href="/empty">EMPTY</a></div>';
+
+	headerCell.innerHTML += '</div>';
+
+	container.appendChild(controlTable);
+
 }
 
 function renderStatus(jsonObj, containerId) {
@@ -286,9 +332,9 @@ function renderStatus(jsonObj, containerId) {
     var headerCell = headerRow.insertCell(0);
 	
 	if (currentRecording) {
-    		headerCell.innerHTML = '<h1>' + jsonObj.hostname + '</h1> <b>:: RECORDING:</b><pre>' + currentRecording + '</pre>'; 
+			headerCell.innerHTML = '<h1>' + jsonObj.hostname + '</h1> <b>:: RECORDING:</b><pre>' + currentRecording + '</pre>'; 
 	} else {
-    		headerCell.innerHTML = '<h1>' + jsonObj.hostname + '</h1> <b>:: </b>Not Currently Recording.'; 
+			headerCell.innerHTML = '<h1>' + jsonObj.hostname + '</h1> <b>:: </b>Not Currently Recording.'; 
 	}                                 
 
 	container.appendChild(statusTable);
@@ -299,27 +345,24 @@ function renderStatus(jsonObj, containerId) {
 // Function to open the link (you can customize this based on your server)
 function openLink(fileName) {
     alert("Opening link: " + fileName);
-    // Replace the alert with logic to open the link on your server
 }
 
 
-// document.body.style.backgroundColor = generateBackgroundColor(jsonObject.hostname);
+// Set background colours to make it easier to demo == !J! HACK
+if (jsonObject.hostname == "mix-o")  {
+	document.body.style.backgroundColor = "#8B4000";
+}
+
+if (jsonObject.hostname == "mix-j")  {
+	document.body.style.backgroundColor = "#083F71";
+}
+
 renderStatus(jsonObject, "current-status");
+renderControlInterface(jsonObject, "control-interface");
 prettifyAndRenderJSON(jsonObject, "json-container");
 renderWAVTracks(jsonObject, "wav-tracks");
 
-//function renderJSON(jsonObj, containerId) {
-//    var container = document.getElementById(containerId);
-//    var jsonString = JSON.stringify(jsonObj, null, 8); // The third parameter (2) is for indentation
-//    var preElement = document.createElement("pre");
-//    preElement.textContent = jsonString;
-//    container.appendChild(preElement);
-//}
-//renderJSON(jsonObject, "json-container");
 </script>
-
-
-
 </body>
 </html>
 ]]
@@ -329,7 +372,7 @@ function creamWebStatusHandler:get()
 	local hostName = syscall.gethostname()
 	CREAM:update()
 	local currentState = responseHTML_A .. 
-				cjson.encode({ hostname = hostName, app = {recording = creamRuns, name = APP_NAME, version = config.CREAM_APP_VERSION, edit = CREAM.edit, io = { CREAM.devices.online } } }) .. 
+				cjson.encode({ hostname = hostName, partner = config.CREAM_SYNC_PARTNER, app = {recording = creamIsRecording, synchronizing = creamIsSynchronizing, name = APP_NAME, version = config.CREAM_APP_VERSION, edit = CREAM.edit, io = { CREAM.devices.online } } }) .. 
 			responseHTML_B 
 	self:write(currentState)
 	self:finish()
@@ -356,27 +399,26 @@ local function execute_command_async(command, callback)
     end)
 end
 
-
 -- Coroutine function to execute a long-running shell command asynchronously
 local function execute_long_running_command(command, callback)
     turbo.ioloop.instance():add_callback(function()
-    	local thread = turbo.thread.Thread(function(th)
-        	turbo.log.notice("Executing command: " .. command)
-        	local process = io.popen(command)
-        	local output = ""
-        	while creamRuns do
-            	local chunk = process:read("*a")
-            	if not chunk or chunk == "" then
-                	break
-            	end
-            	output = output .. chunk
-            	coroutine.yield()
-        	end
-        	--callback(output)
-        	process:close()
-        	turbo.log.notice("Command execution stopped.")
-        	th:stop()
-    	end)
+		local thread = turbo.thread.Thread(function(th)
+			turbo.log.notice("Executing command: " .. command)
+			local process = io.popen(command)
+			local output = ""
+			while creamIsRecording do
+				local chunk = process:read("*a")
+				if not chunk or chunk == "" then
+					break
+				end
+				output = output .. chunk
+				coroutine.yield()
+			end
+			--callback(output)
+			process:close()
+			turbo.log.notice("Command execution stopped.")
+			th:stop()
+		end)
 
     print(thread:wait_for_data())
     thread:wait_for_finish()
@@ -385,46 +427,136 @@ local function execute_long_running_command(command, callback)
     end)
 end
 
-function creamWebPlayHandler:get()
-   	local command = "arecord -vvv -f cd -t wav " .. config.CREAM_ARCHIVE_DIRECTORY .. "/" 
-													.. CREAM.edit.current_recording .. " -d 0 2>&1 "
+-- like long_running_command, but for rsync = !J! HACK 
+local function execute_long_running_rsync(command, callback)
+    turbo.ioloop.instance():add_callback(function()
+		local thread = turbo.thread.Thread(function(th)
+			turbo.log.notice("Executing command: " .. command)
+			local process = io.popen(command)
+			local output = ""
+			while creamIsSynchronizing do
+				local chunk = process:read("*a")
+				if not chunk or chunk == "" then
+					break
+				end
+				output = output .. chunk
+				coroutine.yield()
+			end
+			--callback(output)
+			process:close()
+			turbo.log.notice("Command execution stopped.")
+			th:stop()
+		end)
 
-	creamRuns = true
+    print(thread:wait_for_data())
+    thread:wait_for_finish()
+    turbo.ioloop.instance():close()
 
-   	execute_long_running_command(command, function(result)
-   	end)
+    end)
+end
 
-	self:write("Started Recording " .. CREAM.edit.current_recording .. 
+-- like long_running_command, but for playing = !J! HACK 
+local function execute_long_running_play(command, callback)
+    turbo.ioloop.instance():add_callback(function()
+		local thread = turbo.thread.Thread(function(th)
+			turbo.log.notice("Executing command: " .. command)
+			local process = io.popen(command)
+			local output = ""
+			while creamIsPlaying do
+				local chunk = process:read("*a")
+				if not chunk or chunk == "" then
+					break
+				end
+				output = output .. chunk
+				coroutine.yield()
+			end
+			--callback(output)
+			process:close()
+			turbo.log.notice("Command execution stopped.")
+			th:stop()
+		end)
+
+    print(thread:wait_for_data())
+    thread:wait_for_finish()
+    turbo.ioloop.instance():close()
+
+    end)
+end
+
+
+function creamWebPlayHandler:get(fileToPlay)
+	local command = "aplay " .. config.CREAM_ARCHIVE_DIRECTORY .. fileToPlay .. " -d 0 2>&1 "
+
+	creamIsPlaying = true
+
+	execute_long_running_play(command, function(result)
+		creamIsPlaying = false
+	end)
+
+	self:write("Started Playing " .. fileToPlay .. 
 			" ... <script>location.href = '/status';</script>")
 end
 
+function creamWebSynchronizeHandler:get()
+
+	local command = ""
+
+	if (creamIsSynchronizing) then
+		command = "killall rsync"
+		creamIsSynchronizing = false
+	else
+		--rsync -avz --include='mix-o' ibi@mix-o.local:/opt/austrianAudio/var/CREAM/ /opt/austrianAudio/var/CREAM/
+		command = "rsync -avz --include='" .. config.CREAM_SYNC_PARTNER .. 
+				"' ibi@" .. config.CREAM_SYNC_PARTNER .. 
+				".local:" .. config.CREAM_ARCHIVE_DIRECTORY .. 
+				" " .. config.CREAM_ARCHIVE_DIRECTORY .. " 2>&1 "
+		creamIsSynchronizing = true
+	end
+
+	execute_long_running_rsync(command, function(result)
+	end)
+
+	self:write("Started Synchronizing " .. " ... <script>location.href = '/status';</script>")
+end
+
+
 function creamWebStopHandler:get()
 	local command = "killall arecord"
-	creamRuns = false
-   	execute_long_running_command(command, function(result)
-   		self:write(result)
-   		self:finish()
+	creamIsRecording = false
+	execute_long_running_command(command, function(result)
+		self:write(result)
+		self:finish()
 	end)
 	CREAM.edit.current_recording = ""
 	self:write("Stopped Recording...<script>location.href = '/status';</script>")
 end
  
+function creamWebEmptyHandler:get()
+	local command = "find " .. config.CREAM_ARCHIVE_DIRECTORY .. " -name *.wav -exec rm -rf {} \\;"
+	creamIsRecording = false
+	execute_long_running_command(command, function(result)
+		self:write(result)
+		self:finish()
+	end)
+	CREAM.edit.current_recording = ""
+	self:write("Emptied recordings ...<script>location.href = '/status';</script>")
+end
+ 
 function creamWebStartHandler:get()
 
-	if creamRuns == true then 
+	if creamIsRecording == true then 
 		self:write("Recording already in progress " .. CREAM.edit.current_recording .. " ... ")
 	else
 
-  	CREAM.edit.current_recording = os.date('%Y-%m-%d@%H:%M:%S.') .. string.match(tostring(os.clock()), "%d%.(%d+)") .. ".wav"
-   	local command = "arecord -vvv -f cd -t wav " .. config.CREAM_ARCHIVE_DIRECTORY .. "/" 
-													.. CREAM.edit.current_recording .. " -d 0 2>&1 "
+	CREAM.edit.current_recording = syscall.gethostname() .. "::" .. os.date('%Y-%m-%d@%H:%M:%S.') .. string.match(tostring(os.clock()), "%d%.(%d+)") .. ".wav"
+	local command = "arecord -vvv -f cd -t wav " .. config.CREAM_ARCHIVE_DIRECTORY .. CREAM.edit.current_recording .. " -d 0 2>&1 "
 
-	creamRuns = true
+	creamIsRecording = true
 
-   	execute_long_running_command(command, function(result)
-   	end)
+	execute_long_running_command(command, function(result)
+	end)
 
-	self:write("Started Recording " .. CREAM.edit.current_recording .. 
+	self:write("Started Recording " .. config.CREAM_ARCHIVE_DIRECTORY .. CREAM.edit.current_recording .. 
 			" ... <script>location.href = '/status';</script>")
 
 	end
@@ -467,7 +599,9 @@ local creamWebApp = turbo.web.Application:new({
 {"/status", creamWebStatusHandler},
 {"/start", creamWebStartHandler},
 {"/stop", creamWebStopHandler},
-{"/play", creamWebPlayHandler},
+{"/empty", creamWebEmptyHandler},
+{"/synchronize", creamWebSynchronizeHandler},
+{"/play/(.*)$", creamWebPlayHandler},
 {"/recordStart", creamWebRecordStartHandler},
 {"/recordStop", creamWebRecordStopHandler},
 {"^/$", turbo.web.StaticFileHandler, "./html/index.html"},
@@ -491,11 +625,11 @@ function creamMain()
 			creamCOMMAND() 
 		end
 
-		if (creamRuns) then
-   		 	-- update
-   		 	if (CREAM:update()) then
-   		     -- execute
-   		 	end
+		if (creamIsRecording) then
+			-- update
+			if (CREAM:update()) then
+			 -- execute
+			end
 		end
 
 	end

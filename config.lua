@@ -11,6 +11,8 @@ _M.CREAM_APP_VERSION = "{\"Version\":\"1.0\", buildDate: \"" .. require("buildDa
 
 _M.CREAM_ARCHIVE_DIRECTORY = "/opt/austrianAudio/var/CREAM/"
 
+_M.CREAM_SYNC_PARTNER = "mix-o"
+
 _M.CREAM_HOST = "localhost"
 _M.CREAM_COMMAND_PORT = arg[2] or 8080
 
