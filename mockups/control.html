@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Control Surface</title>
+  <style>
+    body {
+      font-family: 'Arial', sans-serif;
+      background-color: #333;
+      color: #fff;
+      margin: 0;
+      padding: 20px; /* Add some padding for better visibility */
+    }
+
+    .control-surface {
+      display: flex;
+    }
+
+    .recording-button {
+      padding: 10px 20px;
+      margin: 10px;
+      font-size: 18px;
+      text-align: center;
+      text-transform: uppercase;
+      cursor: pointer;
+      border: 2px solid #fff;
+      border-radius: 5px;
+      background-color: #444;
+      color: #fff;
+      transition: background-color 0.3s, border-color 0.3s, color 0.3s;
+    }
+
+    .recording-button:hover {
+      background-color: #fff;
+      color: #333;
+    }
+
+    .start {
+      background-color: #4CAF50; /* Green */
+      border-color: #4CAF50;
+    }
+
+    .stop {
+      background-color: #f44336; /* Red */
+      border-color: #f44336;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="control-surface">
+    <div class="recording-button start">START</div>
+    <div class="recording-button stop">STOP</div>
+  </div>
+
+</body>
+</html>
+
