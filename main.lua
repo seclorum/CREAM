@@ -22,7 +22,6 @@ if (syscall.gethostname() == "mix-j") then
 	config.CREAM_SYNC_PARTNER = "mix-o"
 end
 
-
 io.stdout:setvbuf("no")
 
 CREAM=require("cream")
@@ -34,7 +33,6 @@ function cLOG(level, ...)
 	syslog.syslog(level, ...)
 	print("LOG:" .. level .. " " .. ...)
 end
-
 
 -- cream Command STACK and initialization functions
 cSTACK = turbo.structs.deque:new()
@@ -54,7 +52,6 @@ cSTACK:append(function()
 	--CREAM.mixer:run()
 end)
 
-
 -- cream Web Handlers
 local creamWebStatusHandler = class("creamWebStatusHandler", turbo.web.RequestHandler)
 local creamWebStopHandler = class("creamWebStopHandler", turbo.web.RequestHandler)
@@ -65,7 +62,6 @@ local creamWebStartHandler = class("creamWebStartHandler", turbo.web.RequestHand
 local creamWebRecordStartHandler = class("creamWebRecordStartHandler", turbo.web.RequestHandler)
 local creamWebRecordStopHandler = class("creamWebRecordStopHandler", turbo.web.RequestHandler)
 local creamWavHandler = class("creamWavHandler", turbo.web.RequestHandler)
-
 
 local responseHTML_A = [[
 <!DOCTYPE html>
@@ -348,9 +344,9 @@ function renderStatus(jsonObj, containerId) {
     var headerCell = headerRow.insertCell(0);
 	
 	if (currentRecording) {
-			headerCell.innerHTML = '<h1>' + jsonObj.hostname + '</h1> <b>:: CAPTURE:</b><pre>' + currentRecording + '</pre>'; 
+			headerCell.innerHTML = '<h1>BIN:' + jsonObj.hostname + '</h1> <b>:: CAPTURE:</b><pre>' + currentRecording + '</pre>'; 
 	} else {
-			headerCell.innerHTML = '<h1>' + jsonObj.hostname + '</h1> <b>:: </b>Not Currently Recording.'; 
+			headerCell.innerHTML = '<h1>BIN:' + jsonObj.hostname + '</h1> <b>:: </b>Not Currently Recording.'; 
 	}                                 
 
 	container.appendChild(statusTable);
