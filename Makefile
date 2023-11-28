@@ -33,7 +33,7 @@ wait:
 	while inotifywait -e close_write  .; do pkill luajit ; luajit main.lua &  done
 
 reqs:
-	sudo apt-get install -y luajit luarocks git build-essential libssl-dev libluajit-5.1-dev lua-cjson-dev sysv-rc-conf meson libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev inotify-tools
+	sudo apt-get install -y luajit luarocks git build-essential libssl-dev libluajit-5.1-dev lua-cjson-dev sysv-rc-conf meson libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev inotify-tools cowsay
 
 reqs-turbo:
 	PREFIX=`pwd`/dist/aa-cream_1.0-1/opt/austrianAudio/ make -C third/turbo install
