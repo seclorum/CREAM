@@ -10,9 +10,9 @@ local signal = require "posix.signal"
 local cjson = require "cjson"
 local syscall = require "syscall"
 
-local creamIsRecording = false
-local creamIsPlaying = false
-local creamIsSynchronizing = false
+creamIsExecuting = false
+creamIsPlaying = false
+creamIsSynchronizing = false
 
 -- !J! for the demo
 if (syscall.gethostname() == "mix-o") then
@@ -78,7 +78,7 @@ local responseHTML_A = [[
     body {
 		font-family: 'Courier New', monospace; /* Use a monospaced font */
 		background-color: #1b2a3f; /* Grey-blue background color */
-		color: #6A9Ddb; /* Blue text color */
+		color: white; /* Blue text color */
     }
 
     h1, h2, h3, h4, h5, h6 {
@@ -121,7 +121,7 @@ local responseHTML_A = [[
 		color: brown;
     }
     .null {
-		color: gray;
+		color: white;
     }
     .link {
 		color: #999999; /* Black color for links */
@@ -136,7 +136,8 @@ local responseHTML_A = [[
       display: flex;
     }
 
-    .interface-button {
+    .interface-button { 
+      width: 400px;
       padding: 10px 20px;
       margin: 10px;
       font-size: 18px;
@@ -155,12 +156,12 @@ local responseHTML_A = [[
       color: #333;
     }
 
-    .stop {
+    .start {
       background-color: #A7F9AB;
       border-color: #4CAF50;
     }
 
-    .start {
+    .stop {
       background-color: #FBB1AB;
       border-color: #f44336;
     }
@@ -173,6 +174,11 @@ local responseHTML_A = [[
     .synchronize {
       background-color: #CBB1FE;
       border-color: green;
+    }
+
+    .synchronizing {
+      background-color: green;
+      border-color: #CBB1FE;
     }
 
     </style>
@@ -263,8 +269,8 @@ function prettifyAndRenderJSON(jsonObj, containerId) {
 function renderWAVTracks(jsonObj, containerId) {
     var container = document.getElementById(containerId);
     var jsonString = JSON.stringify(jsonObj, null, 2);
-		var Tracks = jsonObj.app.edit.Tracks;
-		var sortedTracks = Tracks.sort();
+    var Tracks = jsonObj.app.edit.Tracks;
+    var sortedTracks = Tracks.sort();
 
         var wavTable = document.createElement("table");
         wavTable.border = "0";
@@ -274,19 +280,24 @@ function renderWAVTracks(jsonObj, containerId) {
 
         // Create wavTable rows with links
         for (var i = 0; i < sortedTracks.length; i++) {
-		   highlight_style = "";
+	    var highlight_style = "";
+	    var link_class = "disabled";
+	    var audio_controls = '<audio controls="controls"><source src="/static/' + sortedTracks[i] + '" type="audio/x-wav" /></audio>';
+
             var row = wavTable.insertRow(0);
             var cell = row.insertCell(0);
-			if (jsonObj.app.edit.current_recording == sortedTracks[i]) {
-				highlight_style = 'style="background-color: red;"'
-			}
+
+	    if (jsonObj.app.edit.current_recording == sortedTracks[i]) {
+		highlight_style = 'style="background-color: red;"';
+		audio_controls = '';
+	    } else {
+              link_class="link";
+            }
+
             cell.innerHTML = '<li ' + highlight_style + '>' + 
-								'<a class="link" href="/play/' + sortedTracks[i] + 
-								'" target="_blank">' + sortedTracks[i] + '</a><pre>' +
-								'<audio controls="controls"><source src="/static/' +
-								sortedTracks[i] + 
-								'" type="audio/x-wav" /></audio>' + 
-								'</li>';
+		'<a class="' + link_class + '" href="/play/' + sortedTracks[i] + 
+		'">' + sortedTracks[i] + '</a><pre>' + audio_controls + 
+		'</li>';
         }
 
         // Append the wavTable to the container
@@ -295,6 +306,7 @@ function renderWAVTracks(jsonObj, containerId) {
 
 function renderControlInterface(jsonObj, containerId) {
     var currentRecording = jsonObj.app.edit.current_recording;
+    var currentSynchronizing = jsonObj.app.synchronizing;
     var container = document.getElementById(containerId);
     var controlTable = document.createElement("table");
     controlTable.border = "0";
@@ -304,14 +316,18 @@ function renderControlInterface(jsonObj, containerId) {
 	headerCell.innerHTML = '<div class="control-surface">'
 
 	if (currentRecording) {
-			headerCell.innerHTML += '<div class="interface-button stop"><a href="/stop">STOP RECORDING</a></div>';
+			headerCell.innerHTML += '<div class="interface-button stop"><a href="/stop">STOP CAPTURE</a></div>';
 	} else {
-			headerCell.innerHTML += '<div class="interface-button start"><a href="/start">START RECORDING</a></div>';
+			headerCell.innerHTML += '<div class="interface-button start"><a href="/start">CAPTURE</a></div>';
 	}                                 
 		
+	if (currentSynchronizing) {
+		headerCell.innerHTML += '<div class="interface-button synchronizing"><a href="/synchronize">SYNCHING ' + jsonObj.partner + ' BIN</a></div>';
+	} else { 
+		headerCell.innerHTML += '<div class="interface-button synchronize"><a href="/synchronize">SYNCH ' + jsonObj.partner + ' BIN</a></div>';
+	}
 
-	headerCell.innerHTML += '<div class="interface-button synchronize"><a href="/synchronize">SYNCH ' + jsonObj.partner + '</a></div>';
-	headerCell.innerHTML += '<div class="interface-button empty"><a href="/empty">EMPTY</a></div>';
+	headerCell.innerHTML += '<div class="interface-button empty"><a href="/empty">CLEAR BIN</a></div>';
 
 	headerCell.innerHTML += '</div>';
 
@@ -332,7 +348,7 @@ function renderStatus(jsonObj, containerId) {
     var headerCell = headerRow.insertCell(0);
 	
 	if (currentRecording) {
-			headerCell.innerHTML = '<h1>' + jsonObj.hostname + '</h1> <b>:: RECORDING:</b><pre>' + currentRecording + '</pre>'; 
+			headerCell.innerHTML = '<h1>' + jsonObj.hostname + '</h1> <b>:: CAPTURE:</b><pre>' + currentRecording + '</pre>'; 
 	} else {
 			headerCell.innerHTML = '<h1>' + jsonObj.hostname + '</h1> <b>:: </b>Not Currently Recording.'; 
 	}                                 
@@ -341,12 +357,10 @@ function renderStatus(jsonObj, containerId) {
  
 }
 
-
 // Function to open the link (you can customize this based on your server)
 function openLink(fileName) {
     alert("Opening link: " + fileName);
 }
-
 
 // Set background colours to make it easier to demo == !J! HACK
 if (jsonObject.hostname == "mix-o")  {
@@ -356,6 +370,11 @@ if (jsonObject.hostname == "mix-o")  {
 if (jsonObject.hostname == "mix-j")  {
 	document.body.style.backgroundColor = "#083F71";
 }
+
+// !J! HACK = until websockets are wired up, just click anywhere to reload
+//document.body.addEventListener("click", function() {
+//    location.reload();
+//});
 
 renderStatus(jsonObject, "current-status");
 renderControlInterface(jsonObject, "control-interface");
@@ -372,7 +391,7 @@ function creamWebStatusHandler:get()
 	local hostName = syscall.gethostname()
 	CREAM:update()
 	local currentState = responseHTML_A .. 
-				cjson.encode({ hostname = hostName, partner = config.CREAM_SYNC_PARTNER, app = {recording = creamIsRecording, synchronizing = creamIsSynchronizing, name = APP_NAME, version = config.CREAM_APP_VERSION, edit = CREAM.edit, io = { CREAM.devices.online } } }) .. 
+				cjson.encode({ hostname = hostName, partner = config.CREAM_SYNC_PARTNER, app = {recording = creamIsExecuting, synchronizing = creamIsSynchronizing, name = APP_NAME, version = config.CREAM_APP_VERSION, edit = CREAM.edit, io = { CREAM.devices.online } } }) .. 
 			responseHTML_B 
 	self:write(currentState)
 	self:finish()
@@ -404,9 +423,14 @@ local function execute_long_running_command(command, callback)
     turbo.ioloop.instance():add_callback(function()
 		local thread = turbo.thread.Thread(function(th)
 			turbo.log.notice("Executing command: " .. command)
+			if (creamIsExecuting) then
+				turbo.log.notice("creamIsExecuting!")
+			else
+				turbo.log.notice("creamIsNOTExecuting?")
+			end
 			local process = io.popen(command)
 			local output = ""
-			while creamIsRecording do
+			while creamIsExecuting do
 				local chunk = process:read("*a")
 				if not chunk or chunk == "" then
 					break
@@ -432,6 +456,11 @@ local function execute_long_running_rsync(command, callback)
     turbo.ioloop.instance():add_callback(function()
 		local thread = turbo.thread.Thread(function(th)
 			turbo.log.notice("Executing command: " .. command)
+			if (creamIsSynchronizing) then
+				turbo.log.notice("creamIsSynchronizing!")
+			else
+				turbo.log.notice("creamIsNOTSynching?")
+			end
 			local process = io.popen(command)
 			local output = ""
 			while creamIsSynchronizing do
@@ -442,6 +471,8 @@ local function execute_long_running_rsync(command, callback)
 				output = output .. chunk
 				coroutine.yield()
 			end
+
+			creamIsSynchronizing = false
 			--callback(output)
 			process:close()
 			turbo.log.notice("Command execution stopped.")
@@ -485,7 +516,7 @@ end
 
 
 function creamWebPlayHandler:get(fileToPlay)
-	local command = "aplay " .. config.CREAM_ARCHIVE_DIRECTORY .. fileToPlay .. " -d 0 2>&1 "
+	local command = "/usr/bin/aplay " .. config.CREAM_ARCHIVE_DIRECTORY .. fileToPlay .. " -d 0 2>&1 "
 
 	creamIsPlaying = true
 
@@ -509,7 +540,7 @@ function creamWebSynchronizeHandler:get()
 		command = "rsync -avz --include='" .. config.CREAM_SYNC_PARTNER .. 
 				"' ibi@" .. config.CREAM_SYNC_PARTNER .. 
 				".local:" .. config.CREAM_ARCHIVE_DIRECTORY .. 
-				" " .. config.CREAM_ARCHIVE_DIRECTORY .. " 2>&1 "
+				" " .. config.CREAM_ARCHIVE_DIRECTORY .. " 2>&1 > " .. config.CREAM_ARCHIVE_DIRECTORY ..  "rsync.log"
 		creamIsSynchronizing = true
 	end
 
@@ -522,7 +553,7 @@ end
 
 function creamWebStopHandler:get()
 	local command = "killall arecord"
-	creamIsRecording = false
+	creamIsExecuting = false
 	execute_long_running_command(command, function(result)
 		self:write(result)
 		self:finish()
@@ -533,7 +564,7 @@ end
  
 function creamWebEmptyHandler:get()
 	local command = "find " .. config.CREAM_ARCHIVE_DIRECTORY .. " -name *.wav -exec rm -rf {} \\;"
-	creamIsRecording = false
+	creamIsExecuting = false
 	execute_long_running_command(command, function(result)
 		self:write(result)
 		self:finish()
@@ -544,20 +575,19 @@ end
  
 function creamWebStartHandler:get()
 
-	if creamIsRecording == true then 
+	if creamIsExecuting == true then 
 		self:write("Recording already in progress " .. CREAM.edit.current_recording .. " ... ")
 	else
 
-	CREAM.edit.current_recording = syscall.gethostname() .. "::" .. os.date('%Y-%m-%d@%H:%M:%S.') .. string.match(tostring(os.clock()), "%d%.(%d+)") .. ".wav"
-	local command = "arecord -vvv -f cd -t wav " .. config.CREAM_ARCHIVE_DIRECTORY .. CREAM.edit.current_recording .. " -d 0 2>&1 "
+		CREAM.edit.current_recording = syscall.gethostname() .. "::" .. os.date('%Y-%m-%d@%H:%M:%S.') .. string.match(tostring(os.clock()), "%d%.(%d+)") .. ".wav"
+		local command = "/usr/bin/arecord -vvv -f cd -t wav " .. config.CREAM_ARCHIVE_DIRECTORY .. CREAM.edit.current_recording .. " -D plughw:CARD=MiCreator,DEV=0 2>&1 > " .. config.CREAM_ARCHIVE_DIRECTORY ..  "arecord.log"
 
-	creamIsRecording = true
+		creamIsExecuting = true
 
-	execute_long_running_command(command, function(result)
-	end)
+		execute_long_running_command(command, function(result)
+		end)
 
-	self:write("Started Recording " .. config.CREAM_ARCHIVE_DIRECTORY .. CREAM.edit.current_recording .. 
-			" ... <script>location.href = '/status';</script>")
+		self:write("Started Recording " .. config.CREAM_ARCHIVE_DIRECTORY .. CREAM.edit.current_recording ..  " ... <script>location.href = '/status';</script>")
 
 	end
 end
@@ -573,12 +603,10 @@ end
 
 function creamWavHandler:get(wavFile)
 
-
 	local wavFilePath = config.CREAM_ARCHIVE_DIRECTORY .. wavFile
 
 	cLOG(syslog.LOG_INFO, "wavFilePath " .. wavFilePath)
     local file = io.open(wavFilePath, "rb")
-
 
     if file then
         local content = file:read("*a")
@@ -625,7 +653,7 @@ function creamMain()
 			creamCOMMAND() 
 		end
 
-		if (creamIsRecording) then
+		if (creamIsExecuting) then
 			-- update
 			if (CREAM:update()) then
 			 -- execute
