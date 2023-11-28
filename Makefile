@@ -58,6 +58,10 @@ distributable:
 	make -C dist/
 	ls -alF dist/*.deb
 
+localinst:
+	cp -rfvp ${CREAM_APP_TARGET} /opt/austrianAudio/bin/
+
+
 clean:
 	make -C dist/ clean
 	rm -rf *.luastatic.c cream ${CREAM_APP_TARGET} ${CREAM_DIST_INST_DIR}/${CREAM_APP_TARGET}
