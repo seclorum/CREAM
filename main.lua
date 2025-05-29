@@ -1,559 +1,450 @@
-config = require("config")
+-- Import required modules
+local config = require("config")
+local turbo = require("turbo")
+local turbo_thread = require("turbo.thread")
+local io = require("io")
+local posix = require("posix")
+local syslog = require("posix.syslog")
+local cjson = require("cjson")
+local syscall = require("syscall")
+local mustache = require("lua-mustache") -- Added Mustache dependency for templating
 
-local turbo = require "turbo"
-local turbo_thread = require "turbo.thread" 
-local io = require "io" 
-local posix = require "posix"
-local syslog = require "posix.syslog"
-local signal = require "posix.signal"
-local cjson = require "cjson"
-local syscall = require "syscall"
+-- Global state flags
+local creamIsExecuting = false
+local creamIsPlaying = false
+local creamIsSynchronizing = false
 
-creamIsExecuting = false
-creamIsPlaying = false
-creamIsSynchronizing = false
-
--- !J! for the demo
-if (syscall.gethostname() == "mix-o") then
-    config.CREAM_SYNC_PARTNER = "mix-j"
+-- Set sync partner based on hostname (refactored for clarity)
+local function setSyncPartner()
+    local hostname = syscall.gethostname()
+    if hostname == "mix-o" then
+        config.CREAM_SYNC_PARTNER = "mix-j"
+    elseif hostname == "mix-j" then
+        config.CREAM_SYNC_PARTNER = "mix-o"
+    else
+        error("Unknown hostname: " .. hostname)
+    end
 end
-if (syscall.gethostname() == "mix-j") then
-    config.CREAM_SYNC_PARTNER = "mix-o"
-end
+setSyncPartner()
 
+-- Disable buffering for stdout
 io.stdout:setvbuf("no")
 
-CREAM = require("cream")
+-- Load CREAM module
+local CREAM = require("cream")
 
-recordingThread = {}
+-- Initialize command stack
+local cSTACK = turbo.structs.deque:new()
 
--- cream LOG function
-function cLOG(level, ...)
-    syslog.syslog(level, ...)
-    print("LOG:" .. level .. " " .. ...)
+-- Logging utility function
+local function cLOG(level, ...)
+    local message = table.concat({...}, " ")
+    syslog.syslog(level, message)
+    print(string.format("LOG:%d %s", level, message))
 end
 
--- cream Command STACK and initialization functions
-cSTACK = turbo.structs.deque:new()
-
+-- Initialize application
 cSTACK:append(function()
-    local hostName = syscall.gethostname()
+    local hostname = syscall.gethostname()
     config.dump()
     syslog.setlogmask(syslog.LOG_DEBUG)
     syslog.openlog(config.APP_NAME, syslog.LOG_SYSLOG)
-    cLOG(syslog.LOG_INFO, config.APP_NAME .. " running on host: " .. syscall.gethostname() .. " protocol version " .. config.CREAM_PROTOCOL_VERSION .. " on " .. config.CREAM_APP_SERVER_HOST .. ":" .. config.CREAM_APP_SERVER_PORT)
+    cLOG(syslog.LOG_INFO, string.format("%s running on host: %s protocol version %s on %s:%d",
+        config.APP_NAME, hostname, config.CREAM_PROTOCOL_VERSION,
+        config.CREAM_APP_SERVER_HOST, config.CREAM_APP_SERVER_PORT))
     cLOG(syslog.LOG_INFO, config.CREAM_APP_VERSION)
 
     CREAM.devices:init()
-    --CREAM.mixer:init()
-    --CREAM.devices:sync()
     CREAM.devices:dump()
-    --CREAM.mixer:run()
 end)
 
--- cream Web Handlers
-local creamWebStatusHandler = class("creamWebStatusHandler", turbo.web.RequestHandler)
-local creamWebStopHandler = class("creamWebStopHandler", turbo.web.RequestHandler)
-local creamWebEmptyHandler = class("creamWebEmptyHandler", turbo.web.RequestHandler)
-local creamWebPlayHandler = class("creamWebPlayHandler", turbo.web.RequestHandler)
-local creamWebSynchronizeHandler = class("creamWebSynchronizeHandler", turbo.web.RequestHandler)
-local creamWebStartHandler = class("creamWebStartHandler", turbo.web.RequestHandler)
-local creamWebRecordStartHandler = class("creamWebRecordStartHandler", turbo.web.RequestHandler)
-local creamWebRecordStopHandler = class("creamWebRecordStopHandler", turbo.web.RequestHandler)
-local creamWavHandler = class("creamWavHandler", turbo.web.RequestHandler)
-
-local responseHTML_A = [[
+-- Mustache template for the status page
+local statusTemplate = [[
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>cream::</title>
-    <!-- Include WaveSurfer.js -->
+    <title>CREAM::{{hostname}}</title>
     <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
     <style>
-    body {
-        font-family: 'Courier New', monospace;
-        background-color: #1b2a3f;
-        color: white;
-    }
-
-    h1, h2, h3, h4, h5, h6 {
-        color: #999999;
-    }
-
-    a:link, a:visited {
-        color: black;
-    }
-
-    #json-container {
-        font-family: 'Courier New', Courier, monospace;
-        white-space: pre-wrap;
-        background-color: #f9f9f9;
-        display: none;
-        padding: 0 18px;
-        overflow: hidden;
-        border: 1px solid #ddd;
-    }
-
-    .collapsible {
-        cursor: pointer;
-        padding: 18px;
-        text-align: left;
-        border: 1px solid #ddd;
-        margin-bottom: 16px;
-    }
-
-    .string { color: black; }
-    .number { color: orange; }
-    .key { color: blue; font-weight: bold; }
-    .boolean { color: brown; }
-    .null { color: white; }
-    .link { color: #999999; text-decoration: underline; cursor: pointer; }
-    .highlight { background-color: orange; }
-
-    .control-surface { display: flex; }
-
-    .interface-button { 
-        width: 400px;
-        padding: 10px 20px;
-        margin: 10px;
-        font-size: 18px;
-        text-align: center;
-        text-transform: uppercase;
-        cursor: pointer;
-        border: 2px solid #fff;
-        border-radius: 5px;
-        background-color: #444;
-        color: #fff;
-        transition: background-color 0.3s, border-color 0.3s, color 0.3s;
-    }
-
-    .interface-button:hover {
-        background-color: #fff;
-        color: #333;
-    }
-
-    .start { background-color: #A7F9AB; border-color: #4CAF50; }
-    .stop { background-color: #FBB1AB; border-color: #f44336; }
-    .empty { background-color: #F9D4B4; border-color: white; }
-    .synchronize { background-color: #CBB1FE; border-color: green; }
-    .synchronizing { background-color: green; border-color: #CBB1FE; }
-
-    /* Waveform styling */
-    .waveform-container {
-        width: 100%;
-        height: 100px;
-        margin: 10px 0;
-        background-color: #222;
-        border: 1px solid #444;
-    }
-    .waveform-controls {
-        margin-top: 5px;
-    }
-    .waveform-button {
-        padding: 5px 10px;
-        margin-right: 5px;
-        background-color: #555;
-        color: white;
-        border: none;
-        border-radius: 3px;
-        cursor: pointer;
-    }
-    .waveform-button:hover {
-        background-color: #777;
-    }
+        body {
+            font-family: 'Courier New', monospace;
+            background-color: {{backgroundColor}};
+            color: white;
+        }
+        h1, h2, h3, h4, h5, h6 { color: #999999; }
+        a:link, a:visited { color: black; }
+        #json-container {
+            font-family: 'Courier New', Courier, monospace;
+            white-space: pre-wrap;
+            background-color: #f9f9f9;
+            display: none;
+            padding: 0 18px;
+            overflow: hidden;
+            border: 1px solid #ddd;
+        }
+        .collapsible {
+            cursor: pointer;
+            padding: 18px;
+            text-align: left;
+            border: 1px solid #ddd;
+            margin-bottom: 16px;
+        }
+        .string { color: black; }
+        .number { color: orange; }
+        .key { color: blue; font-weight: bold; }
+        .boolean { color: brown; }
+        .null { color: white; }
+        .link { color: #999999; text-decoration: underline; cursor: pointer; }
+        .highlight { background-color: orange; }
+        .control-surface { display: flex; }
+        .interface-button {
+            width: 400px;
+            padding: 10px 20px;
+            margin: 10px;
+            font-size: 18px;
+            text-align: center;
+            text-transform: uppercase;
+            cursor: pointer;
+            border: 2px solid #fff;
+            border-radius: 5px;
+            background-color: #444;
+            color: #fff;
+            transition: background-color 0.3s, border-color 0.3s, color 0.3s;
+        }
+        .interface-button:hover {
+            background-color: #fff;
+            color: #333;
+        }
+        .start { background-color: #A7F9AB; border-color: #4CAF50; }
+        .stop { background-color: #FBB1AB; border-color: #f44336; }
+        .empty { background-color: #F9D4B4; border-color: white; }
+        .synchronize { background-color: #CBB1FE; border-color: green; }
+        .synchronizing { background-color: green; border-color: #CBB1FE; }
+        .waveform-container {
+            width: 100%;
+            height: 100px;
+            margin: 10px 0;
+            background-color: #222;
+            border: 1px solid #444;
+        }
+        .waveform-controls {
+            margin-top: 5px;
+        }
+        .waveform-button {
+            padding: 5px 10px;
+            margin-right: 5px;
+            background-color: #555;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .waveform-button:hover {
+            background-color: #777;
+        }
     </style>
 </head>
 <body>
+    <div id="current-status"></div>
+    <div id="control-interface"></div>
+    <div id="wav-tracks"></div>
+    <div class="collapsible" onclick="toggleContent()">::debug::
+        <div id="json-container"></div>
+    </div>
 
-<div id="current-status"></div>
-
-<div id="control-interface"></div>
-
-<div id="wav-tracks"></div>
-
-<div class="collapsible" onClick="toggleContent()">::debug::
-<div id="json-container"></div>
-</div>
-
-<script>
-function toggleContent() {
-    var content = document.getElementById("json-container");
-    if (content.style.display === "none") {
-        content.style.display = "block";
-    } else {
-        content.style.display = "none";
-    }
-}
-
-function generateBackgroundColor(str) {
-    let hashCode = 0;
-    for (let i = 0; i < str.length; i++) {
-        hashCode = str.charCodeAt(i) + ((hashCode << 5) - hashCode);
-    }
-    const r = (hashCode & 0xFF0000) >> 16;
-    const g = (hashCode & 0x00FF00) >> 8;
-    const b = hashCode & 0x0000FF;
-    return `rgb(${r},${g},${b})`;
-}
-
-var jsonObject = ]]
-
-local responseHTML_B = [[;
-
-function prettifyAndRenderJSON(jsonObj, containerId) {
-    var container = document.getElementById(containerId);
-    var jsonString = JSON.stringify(jsonObj, null, 2);
-    jsonString = jsonString.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    var prettyJson = jsonString.replace(/("(\\u[a-f0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
-        function (match) {
-            var cls = 'number';
-            if (/^"/.test(match)) {
-                if (/:$/.test(match)) {
-                    cls = 'key';
-                } else {
-                    cls = 'string';
-                }
-            } else if (/true|false/.test(match)) {
-                cls = 'boolean';
-            } else if (/null/.test(match)) {
-                cls = 'null';
-            }
-            return '<span class="' + cls + '">' + match + '</span>';
-        });
-    prettyJson = prettyJson.replace(/"Tracks": \[\s*((?:"[^"]*",?\s*)+)\]/g, function (match, p1) {
-        var links = p1.replace(/"([^"]*)"/g, '<span class="link" onclick="openLink(\'$1\')">$1</span>');
-        return '"Tracks": [' + links + ']';
-    });
-    var preElement = document.createElement("pre");
-    preElement.innerHTML = prettyJson;
-    container.appendChild(preElement);
-}
-
-function renderWAVTracks(jsonObj, containerId) {
-    var container = document.getElementById(containerId);
-    var jsonString = JSON.stringify(jsonObj, null, 2);
-    var Tracks = jsonObj.app.edit.Tracks;
-    var sortedTracks = Tracks.sort();
-    var wavTable = document.createElement("table");
-    wavTable.border = "0";
-
-    // Store waveform data to initialize later
-    var waveformData = [];
-
-    for (var i = 0; i < sortedTracks.length; i++) {
-        var highlight_style = "";
-        var link_class = "disabled";
-        var row = wavTable.insertRow(0);
-        var cell = row.insertCell(0);
-
-        if (jsonObj.app.edit.current_recording == sortedTracks[i]) {
-            highlight_style = 'style="background-color: red;"';
-        } else {
-            link_class = "link";
+    <script>
+        // Toggle debug JSON visibility
+        function toggleContent() {
+            var content = document.getElementById("json-container");
+            content.style.display = content.style.display === "none" ? "block" : "none";
         }
 
-        // Create a unique waveform container ID
-        var waveformId = 'waveform-' + i;
-        cell.innerHTML = '<li ' + highlight_style + '>' +
-            '<a class="' + link_class + '" href="/play/' + sortedTracks[i] + '">' + sortedTracks[i] + '</a>' +
-            '<div id="' + waveformId + '" class="waveform-container"></div>' +
-            '<div class="waveform-controls">' +
-            '<button class="waveform-button" onclick="wavesurfers[' + i + '].playPause()">Play/Pause</button>' +
-            '<button class="waveform-button" onclick="wavesurfers[' + i + '].skip(-5)">-5s</button>' +
-            '<button class="waveform-button" onclick="wavesurfers[' + i + '].skip(5)">+5s</button>' +
-            '</div></li>';
+        // Generate background color based on hostname
+        function generateBackgroundColor(str) {
+            let hashCode = 0;
+            for (let i = 0; i < str.length; i++) {
+                hashCode = str.charCodeAt(i) + ((hashCode << 5) - hashCode);
+            }
+            const r = (hashCode & 0xFF0000) >> 16;
+            const g = (hashCode & 0x00FF00) >> 8;
+            const b = hashCode & 0x0000FF;
+            return `rgb(${r},${g},${b})`;
+        }
 
-        // Store data for WaveSurfer initialization
-        waveformData.push({ index: i, waveformId: waveformId, track: sortedTracks[i] });
-    }
+        // JSON object from server
+        var jsonObject = {{{jsonData}}};
 
-    // Append the table to the container first
-    container.appendChild(wavTable);
+        // Prettify and render JSON for debug
+        function prettifyAndRenderJSON(jsonObj, containerId) {
+            var container = document.getElementById(containerId);
+            var jsonString = JSON.stringify(jsonObj, null, 2)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            var prettyJson = jsonString.replace(
+                /("(\\u[a-f0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
+                function (match) {
+                    var cls = /^"/.test(match) ? (/:$/.test(match) ? 'key' : 'string') :
+                              /true|false/.test(match) ? 'boolean' :
+                              /null/.test(match) ? 'null' : 'number';
+                    return '<span class="' + cls + '">' + match + '</span>';
+                }
+            );
+            prettyJson = prettyJson.replace(/"Tracks": \[\s*((?:"[^"]*",?\s*)+)\]/g, function (match, p1) {
+                var links = p1.replace(/"([^"]*)"/g, '<span class="link" onclick="openLink(\'$1\')">$1</span>');
+                return '"Tracks": [' + links + ']';
+            });
+            var preElement = document.createElement("pre");
+            preElement.innerHTML = prettyJson;
+            container.appendChild(preElement);
+        }
 
-    // Initialize WaveSurfer instances after DOM update
-    window.wavesurfers = window.wavesurfers || [];
-    waveformData.forEach(function(data) {
-        var wavesurfer = WaveSurfer.create({
-            container: '#' + data.waveformId,
-            waveColor: 'violet',
-            progressColor: 'purple',
-            height: 100,
-            responsive: true,
-            backend: 'MediaElement'
-        });
-        wavesurfer.load('/static/' + data.track);
-        window.wavesurfers[data.index] = wavesurfer;
-    });
-}
+        // Render WAV tracks with WaveSurfer
+        function renderWAVTracks(jsonObj, containerId) {
+            var container = document.getElementById(containerId);
+            var tracks = jsonObj.app.edit.Tracks.sort();
+            var wavTable = document.createElement("table");
+            wavTable.border = "0";
+            var waveformData = [];
 
-function renderControlInterface(jsonObj, containerId) {
-    var currentRecording = jsonObj.app.edit.current_recording;
-    var currentSynchronizing = jsonObj.app.synchronizing;
-    var container = document.getElementById(containerId);
-    var controlTable = document.createElement("table");
-    controlTable.border = "0";
-    var headerRow = controlTable.insertRow(0);
-    var headerCell = headerRow.insertCell(0);
+            tracks.forEach(function(track, i) {
+                var row = wavTable.insertRow(0);
+                var cell = row.insertCell(0);
+                var isCurrentRecording = jsonObj.app.edit.current_recording === track;
+                var highlightStyle = isCurrentRecording ? 'style="background-color: red;"' : '';
+                var linkClass = isCurrentRecording ? 'disabled' : 'link';
+                var waveformId = 'waveform-' + i;
 
-    headerCell.innerHTML = '<div class="control-surface">';
-    if (currentRecording) {
-        headerCell.innerHTML += '<div class="interface-button stop"><a href="/stop">STOP CAPTURE</a></div>';
-    } else {
-        headerCell.innerHTML += '<div class="interface-button start"><a href="/start">CAPTURE</a></div>';
-    }
-    if (currentSynchronizing) {
-        headerCell.innerHTML += '<div class="interface-button synchronizing"><a href="/synchronize">SYNCHING ' + jsonObj.partner + ' BIN</a></div>';
-    } else {
-        headerCell.innerHTML += '<div class="interface-button synchronize"><a href="/synchronize">SYNCH ' + jsonObj.partner + ' BIN</a></div>';
-    }
-    headerCell.innerHTML += '<div class="interface-button empty"><a href="/empty">CLEAR BIN</a></div>';
-    headerCell.innerHTML += '</div>';
+                cell.innerHTML = `<li ${highlightStyle}>
+                    <a class="${linkClass}" href="/play/${track}">${track}</a>
+                    <div id="${waveformId}" class="waveform-container"></div>
+                    <div class="waveform-controls">
+                        <button class="waveform-button" onclick="wavesurfers[${i}].playPause()">Play/Pause</button>
+                        <button class="waveform-button" onclick="wavesurfers[${i}].skip(-5)">-5s</button>
+                        <button class="waveform-button" onclick="wavesurfers[${i}].skip(5)">+5s</button>
+                    </div></li>`;
 
-    container.appendChild(controlTable);
-}
+                waveformData.push({ index: i, waveformId: waveformId, track: track });
+            });
 
-function renderStatus(jsonObj, containerId) {
-    var currentRecording = jsonObj.app.edit.current_recording;
-    var container = document.getElementById(containerId);
-    var statusTable = document.createElement("table");
-    statusTable.border = "0";
+            container.appendChild(wavTable);
 
-    document.title = 'CREAM::' + jsonObj.hostname;
+            window.wavesurfers = window.wavesurfers || [];
+            waveformData.forEach(function(data) {
+                try {
+                    var wavesurfer = WaveSurfer.create({
+                        container: '#' + data.waveformId,
+                        waveColor: 'violet',
+                        progressColor: 'purple',
+                        height: 100,
+                        responsive: true,
+                        backend: 'MediaElement'
+                    });
+                    wavesurfer.load('/static/' + data.track);
+                    wavesurfer.on('error', function(e) {
+                        console.error('WaveSurfer error for ' + data.track + ':', e);
+                    });
+                    window.wavesurfers[data.index] = wavesurfer;
+                } catch (e) {
+                    console.error('Failed to initialize WaveSurfer for ' + data.track + ':', e);
+                }
+            });
+        }
 
-    var headerRow = statusTable.insertRow(0);
-    var headerCell = headerRow.insertCell(0);
+        // Render control interface
+        function renderControlInterface(jsonObj, containerId) {
+            var container = document.getElementById(containerId);
+            var controlTable = document.createElement("table");
+            controlTable.border = "0";
+            var headerRow = controlTable.insertRow(0);
+            var headerCell = headerRow.insertCell(0);
 
-    if (currentRecording) {
-        headerCell.innerHTML = '<h1>BIN:' + jsonObj.hostname + '</h1> <b>:: CAPTURE:</b><pre>' + currentRecording + '</pre>';
-    } else {
-        headerCell.innerHTML = '<h1>BIN:' + jsonObj.hostname + '</h1> <b>:: </b>Not Currently Recording.';
-    }
+            headerCell.innerHTML = `
+                <div class="control-surface">
+                    ${jsonObj.app.edit.current_recording ?
+                        '<div class="interface-button stop"><a href="/stop">STOP CAPTURE</a></div>' :
+                        '<div class="interface-button start"><a href="/start">CAPTURE</a></div>'}
+                    ${jsonObj.app.synchronizing ?
+                        `<div class="interface-button synchronizing"><a href="/synchronize">SYNCHING ${jsonObj.partner} BIN</a></div>` :
+                        `<div class="interface-button synchronize"><a href="/synchronize">SYNCH ${jsonObj.partner} BIN</a></div>`}
+                    <div class="interface-button empty"><a href="/empty">CLEAR BIN</a></div>
+                </div>`;
+            container.appendChild(controlTable);
+        }
 
-    container.appendChild(statusTable);
-}
+        // Render status
+        function renderStatus(jsonObj, containerId) {
+            var container = document.getElementById(containerId);
+            var statusTable = document.createElement("table");
+            statusTable.border = "0";
+            var headerRow = statusTable.insertRow(0);
+            var headerCell = headerRow.insertCell(0);
 
-function openLink(fileName) {
-    alert("Opening link: " + fileName);
-}
+            document.title = 'CREAM::' + jsonObj.hostname;
+            headerCell.innerHTML = jsonObj.app.edit.current_recording ?
+                `<h1>BIN:${jsonObj.hostname}</h1> <b>:: CAPTURE:</b><pre>${jsonObj.app.edit.current_recording}</pre>` :
+                `<h1>BIN:${jsonObj.hostname}</h1> <b>:: </b>Not Currently Recording.`;
+            container.appendChild(statusTable);
+        }
 
-if (jsonObject.hostname == "mix-o") {
-    document.body.style.backgroundColor = "#8B4000";
-}
-if (jsonObject.hostname == "mix-j") {
-    document.body.style.backgroundColor = "#083F71";
-}
+        // Handle link clicks
+        function openLink(fileName) {
+            alert("Opening link: " + fileName);
+        }
 
-renderStatus(jsonObject, "current-status");
-renderControlInterface(jsonObject, "control-interface");
-prettifyAndRenderJSON(jsonObject, "json-container");
-renderWAVTracks(jsonObject, "wav-tracks");
-</script>
+        // Apply hostname-specific background color
+        if (jsonObject.hostname === "mix-o") {
+            document.body.style.backgroundColor = "#8B4000";
+        } else if (jsonObject.hostname === "mix-j") {
+            document.body.style.backgroundColor = "#083F71";
+        }
+
+        // Render all components
+        renderStatus(jsonObject, "current-status");
+        renderControlInterface(jsonObject, "control-interface");
+        prettifyAndRenderJSON(jsonObject, "json-container");
+        renderWAVTracks(jsonObject, "wav-tracks");
+    </script>
 </body>
 </html>
 ]]
 
--- !J! TODO: finish Mustache implementation
-function creamWebStatusHandler:get()
-    local hostName = syscall.gethostname()
-    local userData = { 
-        hostname = hostName, 
-        partner = config.CREAM_SYNC_PARTNER, 
-        app = {
-            recording = creamIsExecuting, 
-            synchronizing = creamIsSynchronizing, 
-            name = config.APP_NAME, 
-            version = config.CREAM_APP_VERSION, 
-            edit = CREAM.edit, 
-            io = { CREAM.devices.online } 
-        } 
-    }
-    local asJson = cjson.encode(userData)
-    local responseData = { userData = userData, asJson = asJson }
-    local webStatusResponse = responseHTML_A .. cjson.encode(userData) .. responseHTML_B
-
-    CREAM:update()
-    self:write(webStatusResponse)
-    self:finish()
+-- Utility function to execute shell commands
+local function executeCommand(command, callback, flag, resetFlag)
+    turbo.ioloop.instance():add_callback(function()
+        local thread = turbo.thread.Thread(function(th)
+            cLOG(syslog.LOG_INFO, "Executing command: " .. command)
+            local process = io.popen(command)
+            local output = ""
+            while flag() do
+                local chunk = process:read("*a")
+                if not chunk or chunk == "" then
+                    break
+                end
+                output = output .. chunk
+                coroutine.yield()
+            end
+            process:close()
+            cLOG(syslog.LOG_INFO, "Command execution stopped: " .. command)
+            if resetFlag then
+                resetFlag(false)
+            end
+            th:stop()
+        end)
+        thread:wait_for_finish()
+        if callback then
+            callback(output)
+        end
+    end)
 end
 
+-- Web Handlers
+local creamWebStatusHandler = class("creamWebStatusHandler", turbo.web.RequestHandler)
+function creamWebStatusHandler:get()
+    local hostname = syscall.gethostname()
+    local userData = {
+        hostname = hostname,
+        partner = config.CREAM_SYNC_PARTNER,
+        backgroundColor = hostname == "mix-o" and "#8B4000" or "#083F71",
+        app = {
+            recording = creamIsExecuting,
+            synchronizing = creamIsSynchronizing,
+            name = config.APP_NAME,
+            version = config.CREAM_APP_VERSION,
+            edit = CREAM.edit,
+            io = { CREAM.devices.online }
+        }
+    }
+    CREAM:update()
+    local jsonData = cjson.encode(userData)
+    local rendered = mustache.render(statusTemplate, {
+        hostname = userData.hostname,
+        backgroundColor = userData.backgroundColor,
+        jsonData = jsonData
+    })
+    self:write(rendered)
+    self:finish()
+end
 function creamWebStatusHandler:on_finish()
     collectgarbage("collect")
 end
 
--- Function to execute a shell command and capture its output
-function execute_command(command)
-    local file = io.popen(command)
-    local output = file:read("*a")
-    file:close()
-    return output
-end
-
--- Coroutine function to execute a shell command asynchronously
-local function execute_command_async(command, callback)
-    turbo.ioloop.instance():add_callback(function()
-        local result = execute_command(command)
-        callback(result)
-    end)
-end
-
--- Coroutine function to execute a long-running shell command asynchronously
-local function execute_long_running_command(command, callback)
-    turbo.ioloop.instance():add_callback(function()
-        local thread = turbo.thread.Thread(function(th)
-            turbo.log.notice("Executing command: " .. command)
-            if (creamIsExecuting) then
-                turbo.log.notice("creamIsExecuting!")
-            else
-                turbo.log.notice("creamIsNOTExecuting?")
-            end
-            local process = io.popen(command)
-            local output = ""
-            while creamIsExecuting do
-                local chunk = process:read("*a")
-                if not chunk or chunk == "" then
-                    break
-                end
-                output = output .. chunk
-                coroutine.yield()
-            end
-            process:close()
-            turbo.log.notice("Command execution stopped.")
-            th:stop()
-        end)
-        print(thread:wait_for_data())
-        thread:wait_for_finish()
-        turbo.ioloop.instance():close()
-    end)
-end
-
--- like long_running_command, but for rsync = !J! HACK 
-local function execute_long_running_rsync(command, callback)
-    turbo.ioloop.instance():add_callback(function()
-        local thread = turbo.thread.Thread(function(th)
-            turbo.log.notice("Executing command: " .. command)
-            if (creamIsSynchronizing) then
-                turbo.log.notice("creamIsSynchronizing!")
-            else
-                turbo.log.notice("creamIsNOTSynching?")
-            end
-            local process = io.popen(command)
-            local output = ""
-            while creamIsSynchronizing do
-                local chunk = process:read("*a")
-                if not chunk or chunk == "" then
-                    break
-                end
-                output = output .. chunk
-                coroutine.yield()
-            end
-            creamIsSynchronizing = false
-            process:close()
-            turbo.log.notice("Command execution stopped.")
-            th:stop()
-        end)
-        print(thread:wait_for_data())
-        thread:wait_for_finish()
-        turbo.ioloop.instance():close()
-    end)
-end
-
--- like long_running_command, but for playing = !J! HACK 
-local function execute_long_running_play(command, callback)
-    turbo.ioloop.instance():add_callback(function()
-        local thread = turbo.thread.Thread(function(th)
-            turbo.log.notice("Executing command: " .. command)
-            local process = io.popen(command)
-            local output = ""
-            while creamIsPlaying do
-                local chunk = process:read("*a")
-                if not chunk or chunk == "" then
-                    break
-                end
-                output = output .. chunk
-                coroutine.yield()
-            end
-            process:close()
-            turbo.log.notice("Command execution stopped.")
-            th:stop()
-        end)
-        print(thread:wait_for_data())
-        thread:wait_for_finish()
-        turbo.ioloop.instance():close()
-    end)
-end
-
-function creamWebPlayHandler:get(fileToPlay)
-    local command = "/usr/bin/aplay " .. config.CREAM_ARCHIVE_DIRECTORY .. fileToPlay .. " -d 0 2>&1 "
-    creamIsPlaying = true
-    execute_long_running_play(command, function(result)
-        creamIsPlaying = false
-    end)
-    self:write("Started Playing " .. fileToPlay .. " ... <script>location.href = '/status';</script>")
-end
-
-function creamWebSynchronizeHandler:get()
-    local command = ""
-    if (creamIsSynchronizing) then
-        command = "killall rsync"
-        creamIsSynchronizing = false
-    else
-        command = "rsync -avz --include='" .. config.CREAM_SYNC_PARTNER .. 
-                "' ibi@" .. config.CREAM_SYNC_PARTNER .. 
-                ".local:" .. config.CREAM_ARCHIVE_DIRECTORY .. 
-                " " .. config.CREAM_ARCHIVE_DIRECTORY .. " 2>&1 > " .. config.CREAM_ARCHIVE_DIRECTORY ..  "rsync.log"
-        creamIsSynchronizing = true
+local creamWebStartHandler = class("creamWebStartHandler", turbo.web.RequestHandler)
+function creamWebStartHandler:get()
+    if creamIsExecuting then
+        self:write("Recording already in progress: " .. CREAM.edit.current_recording)
+        return
     end
-    execute_long_running_rsync(command, function(result) end)
-    self:write("Started Synchronizing " .. " ... <script>location.href = '/status';</script>")
+    CREAM.edit.current_recording = string.format("%s::%s.wav",
+        syscall.gethostname(),
+        os.date('%Y-%m-%d@%H:%M:%S.') .. string.match(tostring(os.clock()), "%d%.(%d+)"))
+    local command = string.format(
+        "/usr/bin/arecord -vvv -f cd -t wav %s%s -D plughw:CARD=MiCreator,DEV=0 2>&1 > %sarecord.log",
+        config.CREAM_ARCHIVE_DIRECTORY, CREAM.edit.current_recording, config.CREAM_ARCHIVE_DIRECTORY)
+    creamIsExecuting = true
+    executeCommand(command, nil, function() return creamIsExecuting end, function(val) creamIsExecuting = val end)
+    self:write(string.format("Started Recording %s%s ... <script>location.href = '/status';</script>",
+        config.CREAM_ARCHIVE_DIRECTORY, CREAM.edit.current_recording))
 end
 
+local creamWebStopHandler = class("creamWebStopHandler", turbo.web.RequestHandler)
 function creamWebStopHandler:get()
     local command = "killall arecord"
     creamIsExecuting = false
-    execute_long_running_command(command, function(result)
+    CREAM.edit.current_recording = ""
+    executeCommand(command, function(result)
         self:write(result)
         self:finish()
-    end)
-    CREAM.edit.current_recording = ""
+    end, function() return creamIsExecuting end)
     self:write("Stopped Recording...<script>location.href = '/status';</script>")
 end
 
+local creamWebEmptyHandler = class("creamWebEmptyHandler", turbo.web.RequestHandler)
 function creamWebEmptyHandler:get()
-    local command = "find " .. config.CREAM_ARCHIVE_DIRECTORY .. " -name *.wav -exec rm -rf {} \\;"
+    local command = string.format("find %s -name '*.wav' -exec rm -rf {} \\;", config.CREAM_ARCHIVE_DIRECTORY)
     creamIsExecuting = false
-    execute_long_running_command(command, function(result)
+    CREAM.edit.current_recording = ""
+    executeCommand(command, function(result)
         self:write(result)
         self:finish()
-    end)
-    CREAM.edit.current_recording = ""
+    end, function() return false end)
     self:write("Emptied recordings ...<script>location.href = '/status';</script>")
 end
 
-function creamWebStartHandler:get()
-    if creamIsExecuting == true then 
-        self:write("Recording already in progress " .. CREAM.edit.current_recording .. " ... ")
-    else
-        CREAM.edit.current_recording = syscall.gethostname() .. "::" .. os.date('%Y-%m-%d@%H:%M:%S.') .. string.match(tostring(os.clock()), "%d%.(%d+)") .. ".wav"
-        local command = "/usr/bin/arecord -vvv -f cd -t wav " .. config.CREAM_ARCHIVE_DIRECTORY .. CREAM.edit.current_recording .. " -D plughw:CARD=MiCreator,DEV=0 2>&1 > " .. config.CREAM_ARCHIVE_DIRECTORY ..  "arecord.log"
-        creamIsExecuting = true
-        execute_long_running_command(command, function(result) end)
-        self:write("Started Recording " .. config.CREAM_ARCHIVE_DIRECTORY .. CREAM.edit.current_recording .. " ... <script>location.href = '/status';</script>")
-    end
+local creamWebSynchronizeHandler = class("creamWebSynchronizeHandler", turbo.web.RequestHandler)
+function creamWebSynchronizeHandler:get()
+    local command = creamIsSynchronizing and "killall rsync" or string.format(
+        "rsync -avz --include='%s' ibi@%s.local:%s %s 2>&1 > %srsync.log",
+        config.CREAM_SYNC_PARTNER, config.CREAM_SYNC_PARTNER, config.CREAM_ARCHIVE_DIRECTORY,
+        config.CREAM_ARCHIVE_DIRECTORY, config.CREAM_ARCHIVE_DIRECTORY)
+    creamIsSynchronizing = not creamIsSynchronizing
+    executeCommand(command, nil, function() return creamIsSynchronizing end, function(val) creamIsSynchronizing = val end)
+    self:write(string.format("Started Synchronizing ... <script>location.href = '/status';</script>"))
 end
 
+local creamWebPlayHandler = class("creamWebPlayHandler", turbo.web.RequestHandler)
+function creamWebPlayHandler:get(fileToPlay)
+    local command = string.format("/usr/bin/aplay %s%s -d 0 2>&1",
+        config.CREAM_ARCHIVE_DIRECTORY, fileToPlay)
+    creamIsPlaying = true
+    executeCommand(command, nil, function() return creamIsPlaying end, function(val) creamIsPlaying = val end)
+    self:write(string.format("Started Playing %s ... <script>location.href = '/status';</script>", fileToPlay))
+end
+
+local creamWebRecordStartHandler = class("creamWebRecordStartHandler", turbo.web.RequestHandler)
 function creamWebRecordStartHandler:get()
     self:finish()
 end
 
+local creamWebRecordStopHandler = class("creamWebRecordStopHandler", turbo.web.RequestHandler)
 function creamWebRecordStopHandler:get()
     self:finish()
 end
 
+local creamWavHandler = class("creamWavHandler", turbo.web.RequestHandler)
 function creamWavHandler:get(wavFile)
     local wavFilePath = config.CREAM_ARCHIVE_DIRECTORY .. wavFile
-    cLOG(syslog.LOG_INFO, "wavFilePath " .. wavFilePath)
+    cLOG(syslog.LOG_INFO, "Serving WAV file: " .. wavFilePath)
     local file = io.open(wavFilePath, "rb")
     if file then
         local content = file:read("*a")
@@ -567,6 +458,7 @@ function creamWavHandler:get(wavFile)
     self:finish()
 end
 
+-- Define web application routes
 local creamWebApp = turbo.web.Application:new({
     {"/status", creamWebStatusHandler},
     {"/start", creamWebStartHandler},
@@ -580,28 +472,24 @@ local creamWebApp = turbo.web.Application:new({
     {"^/static/(.*)$", creamWavHandler},
 })
 
+-- Initialize CREAM and start server
 CREAM:init()
-
 creamWebApp:listen(config.CREAM_APP_SERVER_PORT)
 
-creamCOMMAND = nil
-
-function creamMain()
-    local commandWaiting = true
-    while (cSTACK:size() ~= 0) do
-        creamCOMMAND = cSTACK:pop()
-        if (creamCOMMAND ~= nil) then
-            creamCOMMAND() 
+-- Main loop for processing command stack
+local function creamMain()
+    while cSTACK:size() > 0 do
+        local command = cSTACK:pop()
+        if command then
+            command()
         end
-        if (creamIsExecuting) then
-            if (CREAM:update()) then
-                -- execute
-            end
+        if creamIsExecuting and CREAM:update() then
+            -- Handle updates if needed
         end
     end
     turbo.ioloop.instance():add_timeout(turbo.util.gettimemonotonic() + config.CREAM_COMMAND_INTERVAL, creamMain)
 end
 
+-- Start the main loop and server
 turbo.ioloop.instance():add_timeout(turbo.util.gettimemonotonic() + config.CREAM_COMMAND_INTERVAL, creamMain)
-
 turbo.ioloop.instance():start()
