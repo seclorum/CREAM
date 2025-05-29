@@ -5,7 +5,7 @@ LUA_SRC_FILES = ./main.lua ./config.lua ./cream.lua ./buildDate.lua ./mixer.lua 
 
 
 ifeq ($(BUILD_ARCHITECTURE), aarch64)
-${CREAM_APP_TARGET}:	builddate
+${CREAM_APP_TARGET}:	turbo.arm64.syscall builddate	
 	dist/local/bin/luastatic ${LUA_SRC_FILES} /usr/lib/aarch64-linux-gnu/libluajit-5.1.a /usr/lib/aarch64-linux-gnu/liblua5.1-cjson.a -I/usr/include/lua5.1  "-o ${CREAM_APP_TARGET}"
 endif
 
@@ -34,7 +34,8 @@ tree:
 	mkdir -p /opt/austrianAudio/bin
 	mkdir -p /opt/austrianAudio/lib
 	mkdir -p /opt/austrianAudio/share
-	mkdir -p /opt/austrianAudio/var
+	mkdir -p /opt/austrianAudio/var/CREAM
+	chmod 777 /opt/austrianAudio/var/CREAM/
 	tree -L 1 /opt/austrianAudio
 
 #test:
@@ -49,6 +50,10 @@ reqs:
 
 reqs-turbo:
 	PREFIX=`pwd`/dist/aa-cream_1.0-1/opt/austrianAudio/ make -C third/turbo install
+
+turbo.arm64.syscall:
+	echo "Installing arm64 syscall interface for turbo.lua - necessary until this is accepted upstream"
+	cp turbo_syscall.lua /opt/austrianAudio/share/lua/5.1/turbo/syscall.lua
 
 reqs-lua:
 	#luarocks install turbo 
@@ -67,7 +72,7 @@ reqs-lua:
 trace:	./cream.${BUILD_ARCHITECTURE}
 	strace -r -s 1024 -o /opt/austrianAudio/var/CREAM/`date +"%Y%m%d-%H%M%S"`-app_strace.log.txt ./cream.${BUILD_ARCHITECTURE}
 
-distributable:
+distributable:	${CREAM_APP_TARGET}
 	cp -rfvp ${CREAM_APP_TARGET} ${CREAM_DIST_INST_DIR}
 	make -C dist/
 	ls -alF dist/*.deb
