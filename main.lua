@@ -239,6 +239,9 @@ function renderWAVTracks(jsonObj, containerId) {
     var wavTable = document.createElement("table");
     wavTable.border = "0";
 
+    // Store waveform data to initialize later
+    var waveformData = [];
+
     for (var i = 0; i < sortedTracks.length; i++) {
         var highlight_style = "";
         var link_class = "disabled";
@@ -262,23 +265,27 @@ function renderWAVTracks(jsonObj, containerId) {
             '<button class="waveform-button" onclick="wavesurfers[' + i + '].skip(5)">+5s</button>' +
             '</div></li>';
 
-        // Initialize WaveSurfer for this track
-        (function(index, waveformId, track) {
-            var wavesurfer = WaveSurfer.create({
-                container: '#' + waveformId,
-                waveColor: 'violet',
-                progressColor: 'purple',
-                height: 100,
-                responsive: true,
-                backend: 'MediaElement' // Fallback for compatibility on Raspberry Pi browsers
-            });
-            wavesurfer.load('/static/' + track);
-            window.wavesurfers = window.wavesurfers || [];
-            window.wavesurfers[index] = wavesurfer;
-        })(i, waveformId, sortedTracks[i]);
+        // Store data for WaveSurfer initialization
+        waveformData.push({ index: i, waveformId: waveformId, track: sortedTracks[i] });
     }
 
+    // Append the table to the container first
     container.appendChild(wavTable);
+
+    // Initialize WaveSurfer instances after DOM update
+    window.wavesurfers = window.wavesurfers || [];
+    waveformData.forEach(function(data) {
+        var wavesurfer = WaveSurfer.create({
+            container: '#' + data.waveformId,
+            waveColor: 'violet',
+            progressColor: 'purple',
+            height: 100,
+            responsive: true,
+            backend: 'MediaElement'
+        });
+        wavesurfer.load('/static/' + data.track);
+        window.wavesurfers[data.index] = wavesurfer;
+    });
 }
 
 function renderControlInterface(jsonObj, containerId) {
