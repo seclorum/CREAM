@@ -85,19 +85,92 @@ local statusTemplate = [[
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CREAM::{{hostname}}</title>
-    <!-- Load WaveSurfer.js and plugins from local static directory -->
-    <script src="/js/wavesurfer.js"></script>
-    <script src="/js/regions.min.js"></script>
-    <script src="/js/envelope.min.js"></script>
-    <script src="/js/hover.min.js"></script>
-    <script src="/js/minimap.min.js"></script>
-    <script src="/js/spectrogram.min.js"></script>
-    <script src="/js/timeline.min.js"></script>
-    <script src="/js/zoom.min.js"></script>
+    <!-- Load WaveSurfer.js and plugins with validation -->
+    <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js" onerror="console.error('Failed to load wavesurfer.min.js')"></script>
+<script>
+    try {
+        if (typeof WaveSurfer !== 'undefined') {
+            console.log('WaveSurfer core loaded successfully');
+        }
+    } catch (e) {
+        console.error('WaveSurfer core failed to initialize:', e);
+    }
+</script>
+<script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.min.js" onerror="console.error('Failed to load regions.min.js')"></script>
+<script>
+    try {
+        if (typeof WaveSurfer !== 'undefined' && WaveSurfer.regions) {
+            console.log('Regions plugin loaded successfully');
+        }
+    } catch (e) {
+        console.error('Regions plugin failed to initialize:', e);
+    }
+</script>
+<script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/envelope.min.js" onerror="console.error('Failed to load envelope.min.js')"></script>
+<script>
+    try {
+        if (typeof WaveSurfer !== 'undefined' && WaveSurfer.envelope) {
+            console.log('Envelope plugin loaded successfully');
+        }
+    } catch (e) {
+        console.error('Envelope plugin failed to initialize:', e);
+    }
+</script>
+<script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/hover.min.js" onerror="console.error('Failed to load hover.min.js')"></script>
+<script>
+    try {
+        if (typeof WaveSurfer !== 'undefined' && WaveSurfer.hover) {
+            console.log('Hover plugin loaded successfully');
+        }
+    } catch (e) {
+        console.error('Hover plugin failed to initialize:', e);
+    }
+</script>
+<script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/minimap.min.js" onerror="console.error('Failed to load minimap.min.js')"></script>
+<script>
+    try {
+        if (typeof WaveSurfer !== 'undefined' && WaveSurfer.minimap) {
+            console.log('Minimap plugin loaded successfully');
+        }
+    } catch (e) {
+        console.error('Minimap plugin failed to initialize:', e);
+    }
+</script>
+<script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/spectrogram.min.js" onerror="console.error('Failed to load spectrogram.min.js')"></script>
+<script>
+    try {
+        if (typeof WaveSurfer !== 'undefined' && WaveSurfer.spectrogram) {
+            console.log('Spectrogram plugin loaded successfully');
+        }
+    } catch (e) {
+        console.error('Spectrogram plugin failed to initialize:', e);
+    }
+</script>
+<script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/timeline.min.js" onerror="console.error('Failed to load timeline.min.js')"></script>
+<script>
+    try {
+        if (typeof WaveSurfer !== 'undefined' && WaveSurfer.timeline) {
+            console.log('Timeline plugin loaded successfully');
+        }
+    } catch (e) {
+        console.error('Timeline plugin failed to initialize:', e);
+    }
+</script>
+<script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/zoom.min.js" onerror="console.error('Failed to load zoom.min.js')"></script>
+<script>
+    try {
+        if (typeof WaveSurfer !== 'undefined' && WaveSurfer.zoom) {
+            console.log('Zoom plugin loaded successfully');
+        }
+    } catch (e) {
+        console.error('Zoom plugin failed to initialize:', e);
+    }
+</script>
+
     <style>
         body {
             font-family: 'Courier New', monospace;
-            background-color: {{backgroundColor}}; /* Dynamic background based on hostname */
+            background-color: {{backgroundColor}};
             color: white;
         }
         h1, h2, h3, h4, h5, h6 { color: #999999; }
@@ -123,7 +196,7 @@ local statusTemplate = [[
         .key { color: blue; font-weight: bold; }
         .boolean { color: brown; }
         .null { color: white; }
-        .link { color: #999999; text-decoration: underline; cursor: pointer; }
+        .link { color: blue; text-decoration: underline; cursor: pointer; }
         .highlight { background-color: orange; }
         .control-surface { display: flex; }
         .interface-button {
@@ -138,7 +211,7 @@ local statusTemplate = [[
             border-radius: 5px;
             background-color: #444;
             color: #fff;
-            transition: background-color 0.3s, border-color 0.3s, color 0.3s;
+            transition: background-color 0.3s, border-color 0.3s, color 0.666s;
         }
         .interface-button:hover {
             background-color: #fff;
@@ -147,8 +220,9 @@ local statusTemplate = [[
         .start { background-color: #A7F9AB; border-color: #4CAF50; }
         .stop { background-color: #FBB1AB; border-color: #f44336; }
         .empty { background-color: #F9D4B4; border-color: white; }
-        .synchronize { background-color: #CBB1FE; border-color: green; }
+        .synchronize { background-color: #CBB1FE; border-color:: green; }
         .synchronizing { background-color: green; border-color: #CBB1FE; }
+        }
         .waveform-container {
             width: 100%;
             height: 100px;
@@ -172,10 +246,10 @@ local statusTemplate = [[
             cursor: pointer;
         }
         .waveform-button:hover {
-            background-color: #777;
+            background-color:: #777;
         }
         .waveform-button.active {
-            background-color: #4CAF50; /* Green when active */
+            background-color: #4CAF50;
         }
         .silence-params {
             display: flex;
@@ -193,7 +267,7 @@ local statusTemplate = [[
             margin-left: 10px;
         }
         .ws-region {
-            background: rgba(0, 255, 0, 0.3); /* Green tint for silent regions */
+            background: rgba(0, 255, 0, 0.3);
         }
         .ws-minimap {
             margin-top: 5px;
@@ -201,22 +275,70 @@ local statusTemplate = [[
             border: 1px solid #444;
         }
         .ws-spectrogram {
-            margin-top: 5px;
+            margin-top: 10px;
         }
         .ws-timeline {
             margin-top: 5px;
         }
         .ws-hover {
-            background: rgba(255, 255, 255, 0.2); /* Light cursor for hover */
+            background: rgba(255, 255, 255, 0.2);
+        }
+        .error-message {
+            color: red;
+            font-size: 12px;
+            margin-left: 10px;
         }
     </style>
 </head>
 <body>
     <script>
+        // Log final plugin status after all scripts load
+        window.addEventListener('load"', function() {
+            console.log('Final plugins status after load:', {
+                regions: !!WaveSurfer.regions,
+                envelope: !!WaveSurfer.envelope,
+                hover: !!WaveSurfer.hover,
+                minimap: !!WaveSurfer.minimap,
+                spectrogram: !!WaveSurfer.spectrogram,
+                timeline: !!WaveSurfer.timeline,
+                zoom: !!WaveSurfer.zoom
+            });
+        });
+
+        // Wait for all plugins to load
+        function waitForPlugins(callback) {
+            const plugins = ['regions', 'envelope', 'hover', 'minimap', 'spectrogram', 'timeline', 'zoom'];
+            let loaded = 0;
+            function checkPlugin() {
+                if (typeof WaveSurfer !== 'undefined' && plugins.every(p => WaveSurfer[p])) {
+                    console.log('All plugins loaded:', Object.keys(WaveSurfer));
+                    callback();
+                } else {
+                    loaded++;
+                    if (loaded < 100) { // Retry up to 10s
+                        setTimeout(checkPlugin, 100);
+                    } else {
+                        console.error('Plugin loading timeout:', {
+                            regions: !!WaveSurfer.regions,
+                            envelope: !!WaveSurfer.envelope,
+                            hover: !!WaveSurfer.hover,
+                            minimap: !!WaveSurfer.minimap,
+                            spectrogram: !!WaveSurfer.spectrogram,
+                            timeline: !!WaveSurfer.timeline,
+                            zoom: !!WaveSurfer.zoom
+                        });
+                        document.getElementById('current-status').innerHTML += '<p class="error-message">Error: Some plugins failed to load. Check console for details.</p>';
+                        callback(); // Proceed anyway
+                    }
+                }
+            }
+            checkPlugin();
+        }
+
         // Toggle debug JSON container visibility
         function toggleContent() {
             var content = document.getElementById("json-container");
-            content.style.display = content.style.display === "none" ? "block" : "none";
+            content.style.display = content.style.display === 'none' ? 'block' : 'none';
         }
 
         // Generate background color based on hostname
@@ -231,7 +353,7 @@ local statusTemplate = [[
             return `rgb(${r},${g},${b})`;
         }
 
-        var jsonObject = {{{jsonData}}}; // JSON data from server
+        var jsonObject = {{{jsonData}}};
 
         // Render JSON data with syntax highlighting
         function prettifyAndRenderJSON(jsonObj, containerId) {
@@ -258,24 +380,24 @@ local statusTemplate = [[
 
         // Custom silence detection using audio buffer
         function detectSilence(audioBuffer, sampleRate, threshold, minSilenceDuration) {
-            const samples = audioBuffer.getChannelData(0); // Use first channel
-            const minSamples = minSilenceDuration * sampleRate; // Convert duration to samples
+            const samples = audioBuffer.getChannelData(0);
+            const minSamples = minSilenceDuration * sampleRate;
             const regions = [];
             let silenceStart = null;
-            const thresholdAmplitude = Math.pow(10, threshold / 20); // Convert dB to amplitude
+            const thresholdAmplitude = Math.pow(10, threshold / 20);
 
             for (let i = 0; i < samples.length; i++) {
                 const amplitude = Math.abs(samples[i]);
                 if (amplitude < thresholdAmplitude) {
                     if (silenceStart === null) {
-                        silenceStart = i; // Start of silence
+                        silenceStart = i;
                     }
                 } else {
                     if (silenceStart !== null && (i - silenceStart) >= minSamples) {
                         regions.push({
                             start: silenceStart / sampleRate,
                             end: i / sampleRate
-                        }); // Add silence region
+                        });
                     }
                     silenceStart = null;
                 }
@@ -284,7 +406,7 @@ local statusTemplate = [[
                 regions.push({
                     start: silenceStart / sampleRate,
                     end: samples.length / sampleRate
-                }); // Add final silence region
+                });
             }
             return regions;
         }
@@ -293,7 +415,7 @@ local statusTemplate = [[
         function renderWAVTracks(jsonObj, containerId) {
             var container = document.getElementById(containerId);
             container.innerHTML = '';
-            var tracks = (jsonObj.app.edit.Tracks || []).sort(); // Sort tracks alphabetically
+            var tracks = (jsonObj.app.edit.Tracks || []).sort();
             var wavTable = document.createElement("table");
             wavTable.border = "0";
             var waveformData = [];
@@ -306,7 +428,6 @@ local statusTemplate = [[
                 var linkClass = isCurrentRecording ? 'disabled' : 'link';
                 var waveformId = 'waveform-' + i;
 
-                // HTML for each track with waveform and controls
                 cell.innerHTML = `<li ${highlightStyle}>
                     <a class="${linkClass}" href="/play/${track}">${track}</a>
                     <div id="${waveformId}" class="waveform-container"></div>
@@ -329,6 +450,7 @@ local statusTemplate = [[
                         <button class="waveform-button" onclick="zoomIn(${i})">Zoom In</button>
                         <button class="waveform-button" onclick="zoomOut(${i})">Zoom Out</button>
                         <span class="region-label" id="region-label-${i}"></span>
+                        <span class="error-message" id="error-${i}"></span>
                     </div></li>`;
 
                 waveformData.push({ index: i, waveformId: waveformId, track: track });
@@ -339,7 +461,10 @@ local statusTemplate = [[
             window.wavesurfers = window.wavesurfers || [];
             waveformData.forEach(function(data) {
                 try {
-                    // Initialize WaveSurfer with all plugins
+                    if (typeof WaveSurfer === 'undefined') {
+                        throw new Error('WaveSurfer.js failed to load');
+                    }
+
                     var wavesurfer = WaveSurfer.create({
                         container: '#' + data.waveformId,
                         waveColor: 'violet',
@@ -348,40 +473,39 @@ local statusTemplate = [[
                         responsive: true,
                         backend: 'MediaElement',
                         plugins: [
-                            WaveSurfer.regions.create(), // Regions for marking and playing segments
-                            WaveSurfer.envelope.create({
-                                volume: 1.0, // Default volume
+                            WaveSurfer.regions ? WaveSurfer.regions.create() : null,
+                            WaveSurfer.envelope ? WaveSurfer.envelope.create({
+                                volume: 1.0,
                                 fadeInStart: 0,
                                 fadeInEnd: 0,
                                 fadeOutStart: 0,
                                 fadeOutEnd: 0
-                            }), // Envelope for volume control
-                            WaveSurfer.hover.create({
+                            }) : null,
+                            WaveSurfer.hover ? WaveSurfer.hover.create({
                                 lineColor: '#fff',
                                 lineWidth: 2,
                                 labelBackground: '#555',
                                 labelColor: '#fff'
-                            }), // Hover cursor with time
-                            WaveSurfer.minimap.create({
+                            }) : null,
+                            WaveSurfer.minimap ? WaveSurfer.minimap.create({
                                 height: 30,
                                 waveColor: '#ddd',
                                 progressColor: '#999'
-                            }), // Minimap for overview
-                            WaveSurfer.spectrogram.create({
+                            }) : null,
+                            WaveSurfer.spectrogram ? WaveSurfer.spectrogram.create({
                                 container: '#' + data.waveformId + '-spectrogram',
                                 fftSamples: 512,
                                 labels: true
-                            }), // Spectrogram for frequency visualization
-                            WaveSurfer.timeline.create({
+                            }) : null,
+                            WaveSurfer.timeline ? WaveSurfer.timeline.create({
                                 container: '#' + data.waveformId + '-timeline'
-                            }), // Timeline for time axis
-                            WaveSurfer.zoom.create({
-                                zoom: 100 // Pixels per second
-                            }) // Zoom functionality
-                        ]
+                            }) : null,
+                            WaveSurfer.zoom ? WaveSurfer.zoom.create({
+                                zoom: 100
+                            }) : null
+                        ].filter(plugin => plugin !== null)
                     });
 
-                    // Create containers for spectrogram and timeline
                     var waveformContainer = document.getElementById(data.waveformId);
                     var spectrogramDiv = document.createElement('div');
                     spectrogramDiv.id = data.waveformId + '-spectrogram';
@@ -392,9 +516,8 @@ local statusTemplate = [[
                     timelineDiv.className = 'ws-timeline';
                     waveformContainer.parentNode.insertBefore(timelineDiv, spectrogramDiv.nextSibling);
 
-                    wavesurfer.load('/static/' + data.track); // Load audio file
+                    wavesurfer.load('/static/' + data.track);
 
-                    // Initialize plugin states
                     wavesurfer.on('ready', function() {
                         window.wavesurfers[data.index] = wavesurfer;
                         wavesurfer.isSilenceDetected = false;
@@ -402,28 +525,28 @@ local statusTemplate = [[
                         wavesurfer.isSpectrogramVisible = false;
                         wavesurfer.isTimelineVisible = false;
                         wavesurfer.isEnvelopeApplied = false;
-                        wavesurfer.spectrogram.hide(); // Hide spectrogram by default
-                        wavesurfer.timeline.hide(); // Hide timeline by default
+                        if (wavesurfer.spectrogram) wavesurfer.spectrogram.hide();
+                        if (wavesurfer.timeline) wavesurfer.timeline.hide();
                     });
 
-                    // Play region on click
-                    wavesurfer.on('region-click', function(region) {
-                        wavesurfer.play(region.start, region.end);
-                    });
+                    if (wavesurfer.regions) {
+                        wavesurfer.on('region-click', function(region) {
+                            wavesurfer.play(region.start, region.end);
+                        });
+                        wavesurfer.on('region-created', function() {
+                            updateRegionLabel(data.index, Object.keys(wavesurfer.regions.list).length);
+                        });
+                    }
 
-                    // Update region count label
-                    wavesurfer.on('region-created', function() {
-                        updateRegionLabel(data.index, Object.keys(wavesurfer.regions.list).length);
-                    });
-
-                    // Log errors
                     wavesurfer.on('error', function(e) {
                         console.error('WaveSurfer error for ' + data.track + ':', e);
+                        document.getElementById('error-' + data.index).textContent = 'Error: ' + e.message;
                     });
 
                     window.wavesurfers[data.index] = wavesurfer;
                 } catch (e) {
                     console.error('Failed to initialize WaveSurfer for ' + data.track + ':', e);
+                    document.getElementById('error-' + data.index).textContent = 'Failed to load waveform: ' + e.message;
                 }
             });
         }
@@ -431,7 +554,7 @@ local statusTemplate = [[
         // Toggle silence detection
         function toggleSilenceDetection(index) {
             var wavesurfer = window.wavesurfers[index];
-            if (wavesurfer) {
+            if (wavesurfer && wavesurfer.regions) {
                 var thresholdInput = document.getElementById(`silence-threshold-${index}`);
                 var durationInput = document.getElementById(`silence-duration-${index}`);
                 var threshold = parseFloat(thresholdInput.value) || -40;
@@ -462,15 +585,18 @@ local statusTemplate = [[
                         updateRegionLabel(index, regions.length);
                     }).catch(e => {
                         console.error('Silence detection failed for waveform ' + index + ':', e);
+                        document.getElementById('error-' + index).textContent = 'Silence detection failed: ' + e.message;
                     });
                 }
+            } else {
+                document.getElementById('error-' + index).textContent = 'Silence detection unavailable: Regions plugin not loaded';
             }
         }
 
         // Clear all regions
         function clearRegions(index) {
             var wavesurfer = window.wavesurfers[index];
-            if (wavesurfer) {
+            if (wavesurfer && wavesurfer.regions) {
                 wavesurfer.regions.clear();
                 wavesurfer.isSilenceDetected = false;
                 var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .silence-toggle`);
@@ -479,29 +605,30 @@ local statusTemplate = [[
             }
         }
 
-        // Toggle envelope (fade-in/out)
+        // Toggle envelope
         function toggleEnvelope(index) {
-            var wavesurfer = window.wavesurfer[index];
-            if (wavesurfer) {
+            var wavesurfer = window.wavesurfers[index];
+            if (wavesurfer && wavesurfer.envelope) {
                 if (wavesurfer.isEnvelopeApplied) {
-                    wavesurfer.envelope.setFade(0, 0, 0, 0); // Remove envelope
+                    wavesurfer.envelope.setFade(0, 0, 0, 0);
                     wavesurfer.isEnvelopeApplied = false;
                     var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .envelope-toggle`);
                     if (button) button.classList.remove('active');
                 } else {
-                    // Apply a simple fade-in/fade-out (2 seconds each)
                     wavesurfer.envelope.setFade(2, 0, 2, 0);
                     wavesurfer.isEnvelopeApplied = true;
                     var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .envelope-toggle`);
                     if (button) button.classList.add('active');
                 }
+            } else {
+                document.getElementById('error-' + index).textContent = 'Envelope unavailable: Envelope plugin not loaded';
             }
         }
 
-        // Toggle minimap visibility
+        // Toggle minimap
         function toggleMinimap(index) {
             var wavesurfer = window.wavesurfers[index];
-            if (wavesurfer) {
+            if (wavesurfer && wavesurfer.minimap) {
                 if (wavesurfer.isMinimapVisible) {
                     wavesurfer.minimap.hide();
                     wavesurfer.isMinimapVisible = false;
@@ -513,13 +640,15 @@ local statusTemplate = [[
                     var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .minimap-toggle`);
                     if (button) button.classList.add('active');
                 }
+            } else {
+                document.getElementById('error-' + index).textContent = 'Minimap unavailable: Minimap plugin not loaded';
             }
         }
 
-        // Toggle spectrogram visibility
+        // Toggle spectrogram
         function toggleSpectrogram(index) {
             var wavesurfer = window.wavesurfers[index];
-            if (wavesurfer) {
+            if (wavesurfer && wavesurfer.spectrogram) {
                 if (wavesurfer.isSpectrogramVisible) {
                     wavesurfer.spectrogram.hide();
                     wavesurfer.isSpectrogramVisible = false;
@@ -531,13 +660,15 @@ local statusTemplate = [[
                     var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .spectrogram-toggle`);
                     if (button) button.classList.add('active');
                 }
+            } else {
+                document.getElementById('error-' + index).textContent = 'Spectrogram unavailable: Spectrogram plugin not loaded';
             }
         }
 
-        // Toggle timeline visibility
+        // Toggle timeline
         function toggleTimeline(index) {
             var wavesurfer = window.wavesurfers[index];
-            if (wavesurfer) {
+            if (wavesurfer && wavesurfer.timeline) {
                 if (wavesurfer.isTimelineVisible) {
                     wavesurfer.timeline.hide();
                     wavesurfer.isTimelineVisible = false;
@@ -549,22 +680,28 @@ local statusTemplate = [[
                     var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .timeline-toggle`);
                     if (button) button.classList.add('active');
                 }
+            } else {
+                document.getElementById('error-' + index).textContent = 'Timeline unavailable: Timeline plugin not loaded';
             }
         }
 
         // Zoom in
         function zoomIn(index) {
             var wavesurfer = window.wavesurfers[index];
-            if (wavesurfer) {
+            if (wavesurfer && wavesurfer.zoom) {
                 wavesurfer.zoom.zoom(wavesurfer.zoom.getZoom() * 2);
+            } else {
+                document.getElementById('error-' + index).textContent = 'Zoom unavailable: Zoom plugin not loaded';
             }
         }
 
         // Zoom out
         function zoomOut(index) {
             var wavesurfer = window.wavesurfers[index];
-            if (wavesurfer) {
+            if (wavesurfer && wavesurfer.zoom) {
                 wavesurfer.zoom.zoom(wavesurfer.zoom.getZoom() / 2);
+            } else {
+                document.getElementById('error-' + index).textContent = 'Zoom unavailable: Zoom plugin not loaded';
             }
         }
 
@@ -576,7 +713,7 @@ local statusTemplate = [[
             }
         }
 
-        // Render control interface (Capture, Sync, Clear)
+        // Render control interface
         function renderControlInterface(jsonObj, containerId) {
             var container = document.getElementById(containerId);
             container.innerHTML = '';
@@ -598,9 +735,13 @@ local statusTemplate = [[
                 </div>`;
             container.appendChild(controlTable);
 
-            // Poll /status every 2 seconds to update UI
             setInterval(function() {
-                fetch('/status').then(response => response.text()).then(html => {
+                fetch('/status', { cache: 'no-store' }).then(response => {
+                    if (!response.ok) {
+                        throw new Error('Server responded with status ' + response.status);
+                    }
+                    return response.text();
+                }).then(html => {
                     var parser = new DOMParser();
                     var doc = parser.parseFromString(html, 'text/html');
                     var newJsonScript = doc.querySelector('script').textContent.match(/var jsonObject = ({.*});/);
@@ -609,11 +750,14 @@ local statusTemplate = [[
                         renderControlInterface(newJson, containerId);
                         renderStatus(newJson, 'current-status');
                     }
-                }).catch(err => console.error('Status poll failed:', err));
+                }).catch(err => {
+                    console.error('Status poll failed:', err);
+                    document.getElementById('current-status').innerHTML += '<p class="error-message">Status update failed: ' + err.message + '</p>';
+                });
             }, 2000);
         }
 
-        // Render status (recording state)
+        // Render status
         function renderStatus(jsonObj, containerId) {
             var container = document.getElementById(containerId);
             container.innerHTML = '';
@@ -643,16 +787,18 @@ local statusTemplate = [[
             document.body.style.backgroundColor = "#1b2a3f";
         }
 
-        // Initialize UI on page load
+        // Initialize UI
         document.addEventListener('DOMContentLoaded', function() {
             var collapsible = document.querySelector('.collapsible');
             if (collapsible) {
                 collapsible.addEventListener('click', toggleContent);
             }
-            renderStatus(jsonObject, "current-status");
-            renderControlInterface(jsonObject, "control-interface");
-            prettifyAndRenderJSON(jsonObject, "json-container");
-            renderWAVTracks(jsonObject, "wav-tracks");
+            waitForPlugins(function() {
+                renderStatus(jsonObject, "current-status");
+                renderControlInterface(jsonObject, "control-interface");
+                prettifyAndRenderJSON(jsonObject, "json-container");
+                renderWAVTracks(jsonObject, "wav-tracks");
+            });
         });
     </script>
     <div id="current-status"></div>
@@ -664,6 +810,215 @@ local statusTemplate = [[
 </body>
 </html>
 ]]
+
+--[[
+local statusTemplate = [[
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CREAM::{{hostname}}</title>
+    <script src="/js/wavesurfer.min.js"></script>
+    <script>
+        console.log('WaveSurfer core load attempt at ' + new Date().toISOString());
+        try {
+            console.log('WaveSurfer before envelope:', typeof WaveSurfer, Object.keys(WaveSurfer || {}));
+            if (typeof WaveSurfer !== 'undefined') {
+                console.log('WaveSurfer core loaded at ' + new Date().toISOString());
+            }
+        } catch (e) {
+            console.error('WaveSurfer core error:', e);
+        }
+    </script>
+    <script src="/js/envelope.min.js"></script>
+    <script>
+        console.log('Envelope plugin load attempt at ' + new Date().toISOString());
+        try {
+            fetch('/js/envelope.min.js').then(res => res.text()).then(text => {
+                console.log('Envelope.js content length: ' + text.length + ' chars');
+            });
+            console.log('WaveSurfer after envelope:', typeof WaveSurfer, Object.keys(WaveSurfer || {}));
+            if (typeof WaveSurfer !== 'undefined' && WaveSurfer.envelope) {
+                console.log('Envelope plugin loaded at ' + new Date().toISOString());
+            } else {
+                console.log('Envelope plugin not loaded at ' + new Date().toISOString());
+            }
+        } catch (e) {
+            console.error('Envelope plugin error:', e);
+        }
+    </script>
+    <style>
+        body { font-family: 'Courier New', monospace; background-color: #1b2a3f; color: white; }
+        h1 { color: #999999; }
+        .waveform-container { height: 100px; margin: 10px 0; background-color: #222; border: 1px solid #444; }
+        .waveform-controls { display: flex; gap: 5px; flex-wrap: wrap; }
+        .waveform-button { padding: 5px 10px; background-color: #555; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        .waveform-button:hover { background-color: #777; }
+        .waveform-button.active { background-color: #4CAF50; }
+        .error-message { color: red; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <script>
+        // Wait for plugins
+        function waitForPlugins(callback) {
+            const plugins = ['envelope'];
+            let attempts = 0;
+            function checkPlugin() {
+                if (typeof WaveSurfer !== 'undefined' && plugins.every(p => WaveSurfer[p])) {
+                    console.log('All plugins loaded at ' + new Date().toISOString() + ':', Object.keys(WaveSurfer));
+                    callback();
+                } else {
+                    attempts++;
+                    if (attempts < 50) {
+                        setTimeout(checkPlugin, 100);
+                    } else {
+                        console.error('Plugin loading timeout at ' + new Date().toISOString() + ':', {
+                            envelope: !!WaveSurfer.envelope
+                        });
+                        callback();
+                    }
+                }
+            }
+            console.log('Starting plugin check at ' + new Date().toISOString());
+            checkPlugin();
+        }
+
+        // Render tracks
+        function renderWAVTracks(jsonObj, containerId) {
+            console.log('Rendering tracks at ' + new Date().toISOString());
+            var container = document.getElementById(containerId);
+            container.innerHTML = '';
+            var tracks = (jsonObj.app.edit.Tracks || []).sort();
+            var wavTable = document.createElement('table');
+            wavTable.border = '0';
+            var waveformData = [];
+
+            tracks.forEach(function(track, i) {
+                var row = wavTable.insertRow(0);
+                var cell = row.insertCell(0);
+                var waveformId = 'waveform-' + i;
+                cell.innerHTML = `
+                    <div>
+                        <a href="/play/${track}">${track}</a>
+                        <div id="${waveformId}" class="waveform-container"></div>
+                        <div class="waveform-controls">
+                            <button class="waveform-button" onclick="wavesurfers[${i}]?.playPause()">Play/Pause</button>
+                            <button class="waveform-button envelope-toggle" onclick="toggleEnvelope(${i})">Toggle Envelope</button>
+                            <span class="error-message" id="error-${i}"></span>
+                        </div>
+                    </div>`;
+                waveformData.push({ index: i, waveformId: waveformId, track: track });
+            });
+
+            container.appendChild(wavTable);
+
+            window.wavesurfers = window.wavesurfers || [];
+            waveformData.forEach(function(data) {
+                try {
+                    if (typeof WaveSurfer === 'undefined') {
+                        throw new Error('WaveSurfer.js not loaded');
+                    }
+                    var wavesurfer = WaveSurfer.create({
+                        container: '#' + data.waveformId,
+                        waveColor: 'violet',
+                        progressColor: 'purple',
+                        height: 100,
+                        responsive: true,
+                        plugins: [
+                            WaveSurfer.envelope ? WaveSurfer.envelope.create({ volume: 1.0 }) : null
+                        ].filter(p => p)
+                    });
+                    wavesurfer.load('/static/' + data.track);
+                    wavesurfer.on('ready', function() {
+                        console.log('Waveform ' + data.index + ' ready at ' + new Date().toISOString());
+                        window.wavesurfers[data.index] = wavesurfer;
+                        wavesurfer.isEnvelopeApplied = false;
+                    });
+                    wavesurfer.on('error', function(e) {
+                        document.getElementById('error-' + data.index).textContent = 'Error: ' + e.message;
+                    });
+                    window.wavesurfers[data.index] = wavesurfer;
+                } catch (e) {
+                    console.error('WaveSurfer init error for ' + data.track + ':', e);
+                    document.getElementById('error-' + data.index).textContent = 'Failed to load waveform: ' + e.message;
+                }
+            });
+        }
+
+        // Toggle envelope
+        function toggleEnvelope(index) {
+            console.log('Toggling envelope for index ' + index + ' at ' + new Date().toISOString());
+            var wavesurfer = window.wavesurfers[index];
+            if (wavesurfer && wavesurfer.envelope) {
+                wavesurfer.isEnvelopeApplied = !wavesurfer.isEnvelopeApplied;
+                wavesurfer.envelope.setFade(wavesurfer.isEnvelopeApplied ? 2 : 0, 0, wavesurfer.isEnvelopeApplied ? 2 : 0, 0);
+                var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .envelope-toggle`);
+                if (button) button.classList.toggle('active', wavesurfer.isEnvelopeApplied);
+            } else {
+                document.getElementById('error-' + index).textContent = 'Envelope unavailable: Plugin not loaded';
+            }
+        }
+
+        // Render control interface
+        function renderControlInterface(jsonObj, containerId) {
+            console.log('Rendering control interface at ' + new Date().toISOString());
+            var container = document.getElementById(containerId);
+            container.innerHTML = '';
+            var isRecording = jsonObj.app.edit.current_recording && jsonObj.app.edit.current_recording !== '';
+            container.innerHTML = `
+                <div>
+                    <button class="interface-button ${isRecording ? 'stop' : 'start'}">
+                        <a href="${isRecording ? '/stop' : '/start'}">${isRecording ? 'STOP CAPTURE' : 'CAPTURE'}</a>
+                    </button>
+                </div>`;
+        }
+
+        // Start status polling
+        function startStatusPolling() {
+            console.log('Starting status polling at ' + new Date().toISOString());
+            setInterval(function() {
+                console.log('Status poll at ' + new Date().toISOString());
+                fetch('/status', { cache: 'no-store' }).then(response => {
+                    if (!response.ok) {
+                        throw new Error('Status fetch failed: ' + response.status);
+                    }
+                    return response.text();
+                }).then(html => {
+                    var parser = new DOMParser();
+                    var doc = parser.parseFromString(html, 'text/html');
+                    var newJsonScript = doc.querySelector('script').textContent.match(/var jsonObject = ({.*});/);
+                    if (newJsonScript) {
+                        var newJson = JSON.parse(newJsonScript[1]);
+                        renderControlInterface(newJson, 'control-interface');
+                    }
+                }).catch(err => {
+                    console.error('Status poll error:', err);
+                    document.getElementById('current-status').innerHTML += '<p class="error-message">Status update failed: ' + err.message + '</p>';
+                });
+            }, 2000);
+        }
+
+        // Initialize UI
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM content loaded at ' + new Date().toISOString());
+            waitForPlugins(function() {
+                console.log('Plugins check complete at ' + new Date().toISOString());
+                var jsonObject = {{{jsonData}}};
+                renderControlInterface(jsonObject, 'control-interface');
+                renderWAVTracks(jsonObject, 'wav-tracks');
+                startStatusPolling();
+            });
+        });
+    </script>
+    <div id="current-status"></div>
+    <div id="control-interface"></div>
+    <div id="wav-tracks"></div>
+</body>
+</html>
+]]
+
 
 -- Utility function to execute shell commands
 local function executeCommand(command, callback, flag, resetFlag)
@@ -716,7 +1071,8 @@ function creamJsHandler:get(jsFile)
             self:write(content)
         else
             self:set_status(404)
-            self:write("File not found")
+            self:write("File not found: " .. jsFilePath)
+            cLOG(syslog.LOG_ERR, "JS file not found: " .. jsFilePath)
         end
     end)
     if not status then
@@ -939,6 +1295,13 @@ function creamWavHandler:get(wavFile)
 end
 
 -- Define web application routes
+local creamFaviconHandler = class("creamFaviconHandler", turbo.web.RequestHandler)
+function creamFaviconHandler:get()
+    self:set_status(204) -- No Content
+    self:finish()
+end
+
+-- Update routes
 local creamWebApp = turbo.web.Application:new({
     {"/status", creamWebStatusHandler},
     {"/start", creamWebStartHandler},
@@ -948,6 +1311,7 @@ local creamWebApp = turbo.web.Application:new({
     {"/play/(.*)$", creamWebPlayHandler},
     {"/recordStart", creamWebRecordStartHandler},
     {"/recordStop", creamWebRecordStopHandler},
+    {"/favicon.ico", creamFaviconHandler}, -- Add this line
     {"^/$", turbo.web.StaticFileHandler, "./html/index.html"},
     {"^/static/(.*)$", creamWavHandler},
     {"^/js/(.*)$", creamJsHandler}
