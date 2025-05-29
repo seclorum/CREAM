@@ -7,14 +7,21 @@ local posix = require("posix")
 local syslog = require("posix.syslog")
 local cjson = require("cjson")
 local syscall = require("syscall")
-local mustache = require("lua-mustache") -- Added Mustache dependency for templating
+local socket = require("socket") -- For port checking
 
--- Global state flags
+-- Global state variables
 local creamIsExecuting = false
 local creamIsPlaying = false
 local creamIsSynchronizing = false
 
--- Set sync partner based on hostname (refactored for clarity)
+-- Logging utility function
+local function cLOG(level, ...)
+    local message = table.concat({...}, " ")
+    syslog.syslog(level, message)
+    print(string.format("LOG:%d %s", level, message))
+end
+
+-- Set sync partner based on hostname
 local function setSyncPartner()
     local hostname = syscall.gethostname()
     if hostname == "mix-o" then
@@ -22,7 +29,8 @@ local function setSyncPartner()
     elseif hostname == "mix-j" then
         config.CREAM_SYNC_PARTNER = "mix-o"
     else
-        error("Unknown hostname: " .. hostname)
+        config.CREAM_SYNC_PARTNER = nil
+        cLOG(syslog.LOG_WARNING, "Unknown hostname, sync not supported: " .. hostname)
     end
 end
 setSyncPartner()
@@ -36,11 +44,15 @@ local CREAM = require("cream")
 -- Initialize command stack
 local cSTACK = turbo.structs.deque:new()
 
--- Logging utility function
-local function cLOG(level, ...)
-    local message = table.concat({...}, " ")
-    syslog.syslog(level, message)
-    print(string.format("LOG:%d %s", level, message))
+-- Check if port is in use using Lua socket
+local function isPortInUse(port)
+    local sock, err = socket.bind("0.0.0.0", port)
+    if sock then
+        sock:close()
+        return false
+    end
+    cLOG(syslog.LOG_DEBUG, "Port check error: " .. tostring(err))
+    return true
 end
 
 -- Initialize application
@@ -54,8 +66,15 @@ cSTACK:append(function()
         config.CREAM_APP_SERVER_HOST, config.CREAM_APP_SERVER_PORT))
     cLOG(syslog.LOG_INFO, config.CREAM_APP_VERSION)
 
-    CREAM.devices:init()
-    CREAM.devices:dump()
+    -- Initialize CREAM with error handling
+    local status, err = pcall(function()
+        CREAM.devices = CREAM.devices or { online = {}, init = function() end, dump = function() end }
+        CREAM.devices:init()
+        CREAM.devices:dump()
+    end)
+    if not status then
+        cLOG(syslog.LOG_ERR, "Failed to initialize CREAM devices: " .. tostring(err) .. "\nStack: " .. debug.traceback())
+    end
 end)
 
 -- Mustache template for the status page
@@ -100,10 +119,10 @@ local statusTemplate = [[
         .highlight { background-color: orange; }
         .control-surface { display: flex; }
         .interface-button {
-            width: 400px;
+            width: 150px;
             padding: 10px 20px;
             margin: 10px;
-            font-size: 18px;
+            font-size: 16px;
             text-align: center;
             text-transform: uppercase;
             cursor: pointer;
@@ -147,21 +166,12 @@ local statusTemplate = [[
     </style>
 </head>
 <body>
-    <div id="current-status"></div>
-    <div id="control-interface"></div>
-    <div id="wav-tracks"></div>
-    <div class="collapsible" onclick="toggleContent()">::debug::
-        <div id="json-container"></div>
-    </div>
-
     <script>
-        // Toggle debug JSON visibility
         function toggleContent() {
             var content = document.getElementById("json-container");
             content.style.display = content.style.display === "none" ? "block" : "none";
         }
 
-        // Generate background color based on hostname
         function generateBackgroundColor(str) {
             let hashCode = 0;
             for (let i = 0; i < str.length; i++) {
@@ -173,14 +183,12 @@ local statusTemplate = [[
             return `rgb(${r},${g},${b})`;
         }
 
-        // JSON object from server
         var jsonObject = {{{jsonData}}};
 
-        // Prettify and render JSON for debug
         function prettifyAndRenderJSON(jsonObj, containerId) {
             var container = document.getElementById(containerId);
             var jsonString = JSON.stringify(jsonObj, null, 2)
-                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                .replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
             var prettyJson = jsonString.replace(
                 /("(\\u[a-f0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
                 function (match) {
@@ -199,10 +207,10 @@ local statusTemplate = [[
             container.appendChild(preElement);
         }
 
-        // Render WAV tracks with WaveSurfer
         function renderWAVTracks(jsonObj, containerId) {
             var container = document.getElementById(containerId);
-            var tracks = jsonObj.app.edit.Tracks.sort();
+            container.innerHTML = '';
+            var tracks = (jsonObj.app.edit.Tracks || []).sort();
             var wavTable = document.createElement("table");
             wavTable.border = "0";
             var waveformData = [];
@@ -219,9 +227,9 @@ local statusTemplate = [[
                     <a class="${linkClass}" href="/play/${track}">${track}</a>
                     <div id="${waveformId}" class="waveform-container"></div>
                     <div class="waveform-controls">
-                        <button class="waveform-button" onclick="wavesurfers[${i}].playPause()">Play/Pause</button>
-                        <button class="waveform-button" onclick="wavesurfers[${i}].skip(-5)">-5s</button>
-                        <button class="waveform-button" onclick="wavesurfers[${i}].skip(5)">+5s</button>
+                        <button class="waveform-button" onclick="wavesurfers[${i}]?.playPause()">Play/Pause</button>
+                        <button class="waveform-button" onclick="wavesurfers[${i}]?.skip(-5)">-5s</button>
+                        <button class="waveform-button" onclick="wavesurfers[${i}]?.skip(5)">+5s</button>
                     </div></li>`;
 
                 waveformData.push({ index: i, waveformId: waveformId, track: track });
@@ -251,30 +259,45 @@ local statusTemplate = [[
             });
         }
 
-        // Render control interface
         function renderControlInterface(jsonObj, containerId) {
             var container = document.getElementById(containerId);
+            container.innerHTML = '';
             var controlTable = document.createElement("table");
             controlTable.border = "0";
             var headerRow = controlTable.insertRow(0);
             var headerCell = headerRow.insertCell(0);
 
+            var isRecording = jsonObj.app.edit.current_recording && jsonObj.app.edit.current_recording !== "";
             headerCell.innerHTML = `
                 <div class="control-surface">
-                    ${jsonObj.app.edit.current_recording ?
-                        '<div class="interface-button stop"><a href="/stop">STOP CAPTURE</a></div>' :
-                        '<div class="interface-button start"><a href="/start">CAPTURE</a></div>'}
-                    ${jsonObj.app.synchronizing ?
-                        `<div class="interface-button synchronizing"><a href="/synchronize">SYNCHING ${jsonObj.partner} BIN</a></div>` :
-                        `<div class="interface-button synchronize"><a href="/synchronize">SYNCH ${jsonObj.partner} BIN</a></div>`}
+                    <div class="interface-button ${isRecording ? 'stop' : 'start'}">
+                        <a href="${isRecording ? '/stop' : '/start'}" id="capture-btn">${isRecording ? 'STOP CAPTURE' : 'CAPTURE'}</a>
+                    </div>
+                    <div class="interface-button ${jsonObj.app.synchronizing ? 'synchronizing' : 'synchronize'}">
+                        <a href="/synchronize">SYNCH ${jsonObj.partner} BIN</a>
+                    </div>
                     <div class="interface-button empty"><a href="/empty">CLEAR BIN</a></div>
                 </div>`;
             container.appendChild(controlTable);
+
+            // Poll /status every 2 seconds to update UI
+            setInterval(function() {
+                fetch('/status').then(response => response.text()).then(html => {
+                    var parser = new DOMParser();
+                    var doc = parser.parseFromString(html, 'text/html');
+                    var newJsonScript = doc.querySelector('script').textContent.match(/var jsonObject = ({.*});/);
+                    if (newJsonScript) {
+                        var newJson = JSON.parse(newJsonScript[1]);
+                        renderControlInterface(newJson, containerId);
+                        renderStatus(newJson, 'current-status');
+                    }
+                }).catch(err => console.error('Status poll failed:', err));
+            }, 2000);
         }
 
-        // Render status
         function renderStatus(jsonObj, containerId) {
             var container = document.getElementById(containerId);
+            container.innerHTML = '';
             var statusTable = document.createElement("table");
             statusTable.border = "0";
             var headerRow = statusTable.insertRow(0);
@@ -287,24 +310,35 @@ local statusTemplate = [[
             container.appendChild(statusTable);
         }
 
-        // Handle link clicks
         function openLink(fileName) {
             alert("Opening link: " + fileName);
         }
 
-        // Apply hostname-specific background color
         if (jsonObject.hostname === "mix-o") {
             document.body.style.backgroundColor = "#8B4000";
         } else if (jsonObject.hostname === "mix-j") {
             document.body.style.backgroundColor = "#083F71";
+        } else {
+            document.body.style.backgroundColor = "#1b2a3f";
         }
 
-        // Render all components
-        renderStatus(jsonObject, "current-status");
-        renderControlInterface(jsonObject, "control-interface");
-        prettifyAndRenderJSON(jsonObject, "json-container");
-        renderWAVTracks(jsonObject, "wav-tracks");
+        document.addEventListener('DOMContentLoaded', function() {
+            var collapsible = document.querySelector('.collapsible');
+            if (collapsible) {
+                collapsible.addEventListener('click', toggleContent);
+            }
+            renderStatus(jsonObject, "current-status");
+            renderControlInterface(jsonObject, "control-interface");
+            prettifyAndRenderJSON(jsonObject, "json-container");
+            renderWAVTracks(jsonObj, "wav-tracks");
+        });
     </script>
+    <div id="current-status"></div>
+    <div id="control-interface"></div>
+    <div id="wav-tracks"></div>
+    <div class="collapsible">::debug::
+        <div id="json-container"></div>
+    </div>
 </body>
 </html>
 ]]
@@ -314,18 +348,26 @@ local function executeCommand(command, callback, flag, resetFlag)
     turbo.ioloop.instance():add_callback(function()
         local thread = turbo.thread.Thread(function(th)
             cLOG(syslog.LOG_INFO, "Executing command: " .. command)
-            local process = io.popen(command)
+            local process = io.popen(command .. " ; echo $?")
             local output = ""
-            while flag() do
-                local chunk = process:read("*a")
-                if not chunk or chunk == "" then
-                    break
+            local exitCode
+            while true do
+                local chunk = process:read("*l")
+                if not chunk then break end
+                if chunk:match("^%d+$") then
+                    exitCode = tonumber(chunk)
+                else
+                    output = output .. chunk .. "\n"
                 end
-                output = output .. chunk
+                if flag and not flag() then break end
                 coroutine.yield()
             end
             process:close()
-            cLOG(syslog.LOG_INFO, "Command execution stopped: " .. command)
+            if exitCode and exitCode ~= 0 then
+                cLOG(syslog.LOG_ERR, "Command failed with exit code " .. exitCode .. ": " .. command .. "\nOutput: " .. output)
+            else
+                cLOG(syslog.LOG_INFO, "Command execution stopped: " .. command .. "\nOutput: " .. output)
+            end
             if resetFlag then
                 resetFlag(false)
             end
@@ -341,28 +383,42 @@ end
 -- Web Handlers
 local creamWebStatusHandler = class("creamWebStatusHandler", turbo.web.RequestHandler)
 function creamWebStatusHandler:get()
-    local hostname = syscall.gethostname()
-    local userData = {
-        hostname = hostname,
-        partner = config.CREAM_SYNC_PARTNER,
-        backgroundColor = hostname == "mix-o" and "#8B4000" or "#083F71",
-        app = {
-            recording = creamIsExecuting,
-            synchronizing = creamIsSynchronizing,
-            name = config.APP_NAME,
-            version = config.CREAM_APP_VERSION,
-            edit = CREAM.edit,
-            io = { CREAM.devices.online }
+    local status, result = pcall(function()
+        local hostname = syscall.gethostname()
+        local userData = {
+            hostname = hostname,
+            partner = config.CREAM_SYNC_PARTNER or "none",
+            backgroundColor = hostname == "mix-o" and "#8B4000" or hostname == "mix-j" and "#083F71" or "#1b2a3f",
+            app = {
+                recording = creamIsExecuting,
+                synchronizing = creamIsSynchronizing,
+                name = config.APP_NAME,
+                version = config.CREAM_APP_VERSION,
+                edit = CREAM.edit or { current_recording = "", Tracks = {} },
+                io = CREAM.devices and CREAM.devices.online or {}
+            }
         }
-    }
-    CREAM:update()
-    local jsonData = cjson.encode(userData)
-    local rendered = mustache.render(statusTemplate, {
-        hostname = userData.hostname,
-        backgroundColor = userData.backgroundColor,
-        jsonData = jsonData
-    })
-    self:write(rendered)
+        local updateStatus, updateErr = pcall(CREAM.update, CREAM)
+        if not updateStatus then
+            cLOG(syslog.LOG_ERR, "CREAM update failed: " .. tostring(updateErr) .. "\nStack: " .. debug.traceback())
+        end
+        cLOG(syslog.LOG_DEBUG, "Rendering /status with current_recording: " .. tostring(userData.app.edit.current_recording) .. ", creamIsExecuting: " .. tostring(creamIsExecuting))
+        local jsonData = cjson.encode(userData)
+        local rendered = turbo.web.Mustache.render(statusTemplate, {
+            hostname = userData.hostname,
+            backgroundColor = userData.backgroundColor,
+            jsonData = jsonData,
+            app = userData.app,
+            partner = userData.partner
+        })
+        return rendered
+    end)
+    if not status then
+        cLOG(syslog.LOG_ERR, "Status handler error: " .. tostring(result) .. "\nStack: " .. debug.traceback())
+        self:set_status(500)
+        return self:write("Internal server error")
+    end
+    self:write(result)
     self:finish()
 end
 function creamWebStatusHandler:on_finish()
@@ -371,89 +427,166 @@ end
 
 local creamWebStartHandler = class("creamWebStartHandler", turbo.web.RequestHandler)
 function creamWebStartHandler:get()
-    if creamIsExecuting then
-        self:write("Recording already in progress: " .. CREAM.edit.current_recording)
-        return
+    local status, result = pcall(function()
+        if creamIsExecuting then
+            cLOG(syslog.LOG_WARNING, "Recording already in progress: " .. tostring(CREAM.edit.current_recording))
+            self:write("Recording already in progress: " .. tostring(CREAM.edit.current_recording))
+            return
+        end
+        -- Ensure CREAM.edit is initialized
+        CREAM.edit = CREAM.edit or { current_recording = "", Tracks = {} }
+        CREAM.edit.current_recording = string.format("%s::%s.wav",
+            syscall.gethostname(),
+            os.date('%Y-%m-%d@%H:%M:%S.') .. string.match(tostring(os.clock()), "%d%.(%d+)"))
+        local command = string.format(
+            "/usr/bin/arecord -vvv -f cd -t wav %s%s -D plughw:CARD=MiCreator,DEV=0 2>&1 > %sarecord.log",
+            config.CREAM_ARCHIVE_DIRECTORY, CREAM.edit.current_recording, config.CREAM_ARCHIVE_DIRECTORY)
+        creamIsExecuting = true
+        cLOG(syslog.LOG_INFO, "Starting recording: " .. CREAM.edit.current_recording .. ", creamIsExecuting: " .. tostring(creamIsExecuting))
+        executeCommand(command, nil, function() return creamIsExecuting end, function(val) creamIsExecuting = val end)
+        self:set_status(303)
+        self:set_header("Location", "/status")
+        self:finish()
+    end)
+    if not status then
+        cLOG(syslog.LOG_ERR, "Start handler error: " .. tostring(result) .. "\nStack: " .. debug.traceback())
+        self:set_status(500)
+        self:write("Internal server error")
     end
-    CREAM.edit.current_recording = string.format("%s::%s.wav",
-        syscall.gethostname(),
-        os.date('%Y-%m-%d@%H:%M:%S.') .. string.match(tostring(os.clock()), "%d%.(%d+)"))
-    local command = string.format(
-        "/usr/bin/arecord -vvv -f cd -t wav %s%s -D plughw:CARD=MiCreator,DEV=0 2>&1 > %sarecord.log",
-        config.CREAM_ARCHIVE_DIRECTORY, CREAM.edit.current_recording, config.CREAM_ARCHIVE_DIRECTORY)
-    creamIsExecuting = true
-    executeCommand(command, nil, function() return creamIsExecuting end, function(val) creamIsExecuting = val end)
-    self:write(string.format("Started Recording %s%s ... <script>location.href = '/status';</script>",
-        config.CREAM_ARCHIVE_DIRECTORY, CREAM.edit.current_recording))
 end
 
 local creamWebStopHandler = class("creamWebStopHandler", turbo.web.RequestHandler)
 function creamWebStopHandler:get()
-    local command = "killall arecord"
-    creamIsExecuting = false
-    CREAM.edit.current_recording = ""
-    executeCommand(command, function(result)
-        self:write(result)
+    local status, result = pcall(function()
+        local command = "killall arecord"
+        creamIsExecuting = false
+        cLOG(syslog.LOG_INFO, "Stopping recording: " .. tostring(CREAM.edit and CREAM.edit.current_recording or "none"))
+        if CREAM.edit then
+            CREAM.edit.current_recording = ""
+        end
+        executeCommand(command, function(result)
+            cLOG(syslog.LOG_DEBUG, "Stop command result: " .. result)
+        end, function() return false end)
+        self:set_status(303)
+        self:set_header("Location", "/status")
         self:finish()
-    end, function() return creamIsExecuting end)
-    self:write("Stopped Recording...<script>location.href = '/status';</script>")
+    end)
+    if not status then
+        cLOG(syslog.LOG_ERR, "Stop handler error: " .. tostring(result) .. "\nStack: " .. debug.traceback())
+        self:set_status(500)
+        self:write("Internal server error")
+    end
 end
 
 local creamWebEmptyHandler = class("creamWebEmptyHandler", turbo.web.RequestHandler)
 function creamWebEmptyHandler:get()
-    local command = string.format("find %s -name '*.wav' -exec rm -rf {} \\;", config.CREAM_ARCHIVE_DIRECTORY)
-    creamIsExecuting = false
-    CREAM.edit.current_recording = ""
-    executeCommand(command, function(result)
-        self:write(result)
+    local status, result = pcall(function()
+        local command = string.format("find %s -name '*.wav' -exec rm -rf {} \\;", config.CREAM_ARCHIVE_DIRECTORY)
+        creamIsExecuting = false
+        cLOG(syslog.LOG_INFO, "Emptying recordings")
+        if CREAM.edit then
+            CREAM.edit.current_recording = ""
+        end
+        executeCommand(command, function(result)
+            cLOG(syslog.LOG_DEBUG, "Empty command result: " .. result)
+        end, function() return false end)
+        self:set_status(303)
+        self:set_header("Location", "/status")
         self:finish()
-    end, function() return false end)
-    self:write("Emptied recordings ...<script>location.href = '/status';</script>")
+    end)
+    if not status then
+        cLOG(syslog.LOG_ERR, "Empty handler error: " .. tostring(result) .. "\nStack: " .. debug.traceback())
+        self:set_status(500)
+        self:write("Internal server error")
+    end
 end
 
 local creamWebSynchronizeHandler = class("creamWebSynchronizeHandler", turbo.web.RequestHandler)
 function creamWebSynchronizeHandler:get()
-    local command = creamIsSynchronizing and "killall rsync" or string.format(
-        "rsync -avz --include='%s' ibi@%s.local:%s %s 2>&1 > %srsync.log",
-        config.CREAM_SYNC_PARTNER, config.CREAM_SYNC_PARTNER, config.CREAM_ARCHIVE_DIRECTORY,
-        config.CREAM_ARCHIVE_DIRECTORY, config.CREAM_ARCHIVE_DIRECTORY)
-    creamIsSynchronizing = not creamIsSynchronizing
-    executeCommand(command, nil, function() return creamIsSynchronizing end, function(val) creamIsSynchronizing = val end)
-    self:write(string.format("Started Synchronizing ... <script>location.href = '/status';</script>"))
+    local status, result = pcall(function()
+        if not config.CREAM_SYNC_PARTNER then
+            cLOG(syslog.LOG_WARNING, "Synchronization not supported on this host")
+            self:write("Synchronization not supported")
+            self:set_status(303)
+            self:set_header("Location", "/status")
+            return
+        end
+        local command = creamIsSynchronizing and "killall rsync" or string.format(
+            "rsync -avz --include='%s' ibi@%s.local:%s %s 2>&1 > %srsync.log",
+            config.CREAM_SYNC_PARTNER, config.CREAM_SYNC_PARTNER, config.CREAM_ARCHIVE_DIRECTORY,
+            config.CREAM_ARCHIVE_DIRECTORY, config.CREAM_ARCHIVE_DIRECTORY)
+        creamIsSynchronizing = not creamIsSynchronizing
+        cLOG(syslog.LOG_INFO, creamIsSynchronizing and "Starting synchronization" or "Stopping synchronization")
+        executeCommand(command, nil, function() return creamIsSynchronizing end, function(val) creamIsSynchronizing = val end)
+        self:set_status(303)
+        self:set_header("Location", "/status")
+        self:finish()
+    end)
+    if not status then
+        cLOG(syslog.LOG_ERR, "Synchronize handler error: " .. tostring(result) .. "\nStack: " .. debug.traceback())
+        self:set_status(500)
+        self:write("Internal server error")
+    end
 end
 
 local creamWebPlayHandler = class("creamWebPlayHandler", turbo.web.RequestHandler)
 function creamWebPlayHandler:get(fileToPlay)
-    local command = string.format("/usr/bin/aplay %s%s -d 0 2>&1",
-        config.CREAM_ARCHIVE_DIRECTORY, fileToPlay)
-    creamIsPlaying = true
-    executeCommand(command, nil, function() return creamIsPlaying end, function(val) creamIsPlaying = val end)
-    self:write(string.format("Started Playing %s ... <script>location.href = '/status';</script>", fileToPlay))
+    local status, result = pcall(function()
+        -- Strict file name validation
+        if not fileToPlay:match("^[a-zA-Z0-9%-:_.]+%.wav$") then
+            cLOG(syslog.LOG_ERR, "Invalid file name: " .. fileToPlay)
+            self:set_status(400)
+            self:write("Invalid file name")
+            return
+        end
+        local command = string.format("/usr/bin/aplay %s%s -d 0 2>&1",
+            config.CREAM_ARCHIVE_DIRECTORY, fileToPlay)
+        creamIsPlaying = true
+        cLOG(syslog.LOG_INFO, "Playing: " .. fileToPlay)
+        executeCommand(command, nil, function() return creamIsPlaying end, function(val) creamIsPlaying = val end)
+        self:set_status(303)
+        self:set_header("Location", "/status")
+        self:finish()
+    end)
+    if not status then
+        cLOG(syslog.LOG_ERR, "Play handler error: " .. tostring(result) .. "\nStack: " .. debug.traceback())
+        self:set_status(500)
+        self:write("Internal server error")
+    end
 end
 
 local creamWebRecordStartHandler = class("creamWebRecordStartHandler", turbo.web.RequestHandler)
 function creamWebRecordStartHandler:get()
+    self:set_status(200)
     self:finish()
 end
 
 local creamWebRecordStopHandler = class("creamWebRecordStopHandler", turbo.web.RequestHandler)
 function creamWebRecordStopHandler:get()
+    self:set_status(200)
     self:finish()
 end
 
 local creamWavHandler = class("creamWavHandler", turbo.web.RequestHandler)
 function creamWavHandler:get(wavFile)
-    local wavFilePath = config.CREAM_ARCHIVE_DIRECTORY .. wavFile
-    cLOG(syslog.LOG_INFO, "Serving WAV file: " .. wavFilePath)
-    local file = io.open(wavFilePath, "rb")
-    if file then
-        local content = file:read("*a")
-        file:close()
-        self:set_header("Content-Type", "audio/wav")
-        self:write(content)
-    else
-        self:set_status(404)
-        self:write("File not found")
+    local status, result = pcall(function()
+        local wavFilePath = config.CREAM_ARCHIVE_DIRECTORY .. wavFile
+        cLOG(syslog.LOG_INFO, "Serving WAV file: " .. wavFilePath)
+        local file = io.open(wavFilePath, "rb")
+        if file then
+            local content = file:read("*a")
+            file:close()
+            self:set_header("Content-Type", "audio/wav")
+            self:write(content)
+        else
+            self:set_status(404)
+            self:write("File not found")
+        end
+    end)
+    if not status then
+        cLOG(syslog.LOG_ERR, "WAV handler error: " .. tostring(result) .. "\nStack: " .. debug.traceback())
+        self:set_status(500)
+        self:write("Internal server error")
     end
     self:finish()
 end
@@ -473,7 +606,20 @@ local creamWebApp = turbo.web.Application:new({
 })
 
 -- Initialize CREAM and start server
-CREAM:init()
+local status, err = pcall(function()
+    CREAM.edit = CREAM.edit or { current_recording = "", Tracks = {} }
+    CREAM:init()
+end)
+if not status then
+    cLOG(syslog.LOG_ERR, "CREAM initialization failed: " .. tostring(err) .. "\nStack: " .. debug.traceback())
+end
+
+-- Check port availability before binding
+if isPortInUse(config.CREAM_APP_SERVER_PORT) then
+    cLOG(syslog.LOG_ERR, string.format("Port %d is already in use. Please stop other processes or change CREAM_APP_SERVER_PORT.", config.CREAM_APP_SERVER_PORT))
+    os.exit(1)
+end
+
 creamWebApp:listen(config.CREAM_APP_SERVER_PORT)
 
 -- Main loop for processing command stack
@@ -481,10 +627,16 @@ local function creamMain()
     while cSTACK:size() > 0 do
         local command = cSTACK:pop()
         if command then
-            command()
+            local status, err = pcall(command)
+            if not status then
+                cLOG(syslog.LOG_ERR, "Command execution failed: " .. tostring(err) .. "\nStack: " .. debug.traceback())
+            end
         end
-        if creamIsExecuting and CREAM:update() then
-            -- Handle updates if needed
+        if creamIsExecuting then
+            local status, err = pcall(CREAM.update, CREAM)
+            if not status then
+                cLOG(syslog.LOG_ERR, "CREAM update failed: " .. tostring(err) .. "\nStack: " .. debug.traceback())
+            end
         end
     end
     turbo.ioloop.instance():add_timeout(turbo.util.gettimemonotonic() + config.CREAM_COMMAND_INTERVAL, creamMain)
