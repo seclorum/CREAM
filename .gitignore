@@ -45,6 +45,7 @@ luac.out
 # Build Products
 cream.armv7l
 cream.armv6l
+cream.aarch64
 dist/aa-cream_1.0-1/opt/austrianAudio/bin/cream.armv7l
 dist/aa-cream_1.0-1/opt/austrianAudio/bin/cream.armv6l
 main.luastatic.c
