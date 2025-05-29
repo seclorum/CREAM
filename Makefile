@@ -35,6 +35,7 @@ tree:
 	mkdir -p /opt/austrianAudio/lib
 	mkdir -p /opt/austrianAudio/share
 	mkdir -p /opt/austrianAudio/var/CREAM
+	mkdir -p /opt/austrianAudio/var/static/js
 	chmod 777 /opt/austrianAudio/var/CREAM/
 	tree -L 1 /opt/austrianAudio
 

@@ -86,6 +86,7 @@ local statusTemplate = [[
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CREAM::{{hostname}}</title>
     <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
+    <script src="/js/regions.min.js"></script>
     <style>
         body {
             font-family: 'Courier New', monospace;
@@ -150,10 +151,12 @@ local statusTemplate = [[
         }
         .waveform-controls {
             margin-top: 5px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
         }
         .waveform-button {
             padding: 5px 10px;
-            margin-right: 5px;
             background-color: #555;
             color: white;
             border: none;
@@ -162,6 +165,14 @@ local statusTemplate = [[
         }
         .waveform-button:hover {
             background-color: #777;
+        }
+        . Rosalie {
+            background: rgba(0, 255, 0, 0.3); /* Green tint for silent regions */
+        }
+        .region-label {
+            font-size: 12px;
+            color: #ccc;
+            margin-left: 10px;
         }
     </style>
 </head>
@@ -207,6 +218,38 @@ local statusTemplate = [[
             container.appendChild(preElement);
         }
 
+        function detectSilence(audioBuffer, sampleRate, threshold, minSilenceDuration) {
+            const samples = audioBuffer.getChannelData(0);
+            const minSamples = minSilenceDuration * sampleRate;
+            const regions = [];
+            let silenceStart = null;
+            const thresholdAmplitude = Math.pow(10, threshold / 20); // Convert dB to amplitude
+
+            for (let i = 0; i < samples.length; i++) {
+                const amplitude = Math.abs(samples[i]);
+                if (amplitude < thresholdAmplitude) {
+                    if (silenceStart === null) {
+                        silenceStart = i;
+                    }
+                } else {
+                    if (silenceStart !== null && (i - silenceStart) >= minSamples) {
+                        regions.push({
+                            start: silenceStart / sampleRate,
+                            end: i / sampleRate
+                        });
+                    }
+                    silenceStart = null;
+                }
+            }
+            if (silenceStart !== null && (samples.length - silenceStart) >= minSamples) {
+                regions.push({
+                    start: silenceStart / sampleRate,
+                    end: samples.length / sampleRate
+                });
+            }
+            return regions;
+        }
+
         function renderWAVTracks(jsonObj, containerId) {
             var container = document.getElementById(containerId);
             container.innerHTML = '';
@@ -230,6 +273,9 @@ local statusTemplate = [[
                         <button class="waveform-button" onclick="wavesurfers[${i}]?.playPause()">Play/Pause</button>
                         <button class="waveform-button" onclick="wavesurfers[${i}]?.skip(-5)">-5s</button>
                         <button class="waveform-button" onclick="wavesurfers[${i}]?.skip(5)">+5s</button>
+                        <button class="waveform-button silence-toggle" onclick="toggleSilenceDetection(${i})">Detect Silence</button>
+                        <button class="waveform-button" onclick="clearRegions(${i})">Clear Regions</button>
+                        <span class="region-label" id="region-label-${i}"></span>
                     </div></li>`;
 
                 waveformData.push({ index: i, waveformId: waveformId, track: track });
@@ -246,17 +292,86 @@ local statusTemplate = [[
                         progressColor: 'purple',
                         height: 100,
                         responsive: true,
-                        backend: 'MediaElement'
+                        backend: 'MediaElement',
+                        plugins: [
+                            WaveSurfer.regions.create()
+                        ]
                     });
+
                     wavesurfer.load('/static/' + data.track);
+
+                    wavesurfer.on('ready', function() {
+                        window.wavesurfers[data.index].isSilenceDetected = false;
+                    });
+
+                    wavesurfer.on('region-click', function(region) {
+                        wavesurfer.play(region.start, region.end);
+                    });
+
+                    wavesurfer.on('region-created', function() {
+                        updateRegionLabel(data.index, Object.keys(wavesurfer.regions.list).length);
+                    });
+
                     wavesurfer.on('error', function(e) {
                         console.error('WaveSurfer error for ' + data.track + ':', e);
                     });
+
                     window.wavesurfers[data.index] = wavesurfer;
                 } catch (e) {
                     console.error('Failed to initialize WaveSurfer for ' + data.track + ':', e);
                 }
             });
+        }
+
+        function toggleSilenceDetection(index) {
+            var wavesurfer = window.wavesurfers[index];
+            if (wavesurfer) {
+                if (wavesurfer.isSilenceDetected) {
+                    wavesurfer.regions.clear();
+                    wavesurfer.isSilenceDetected = false;
+                    var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .silence-toggle`);
+                    if (button) button.classList.remove('active');
+                    updateRegionLabel(index, 0);
+                } else {
+                    wavesurfer.getDecodedData().then(audioBuffer => {
+                        const regions = detectSilence(audioBuffer, audioBuffer.sampleRate, -40, 0.5);
+                        regions.forEach(function(region, idx) {
+                            wavesurfer.regions.add({
+                                start: region.start,
+                                end: region.end,
+                                color: 'rgba(0, 255, 0, 0.3)',
+                                data: { type: 'silence', index: idx },
+                                drag: false,
+                                resize: false
+                            });
+                        });
+                        wavesurfer.isSilenceDetected = true;
+                        var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .silence-toggle`);
+                        if (button) button.classList.add('active');
+                        updateRegionLabel(index, regions.length);
+                    }).catch(e => {
+                        console.error('Silence detection failed for waveform ' + index + ':', e);
+                    });
+                }
+            }
+        }
+
+        function clearRegions(index) {
+            var wavesurfer = window.wavesurfers[index];
+            if (wavesurfer) {
+                wavesurfer.regions.clear();
+                wavesurfer.isSilenceDetected = false;
+                var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .silence-toggle`);
+                if (button) button.classList.remove('active');
+                updateRegionLabel(index, 0);
+            }
+        }
+
+        function updateRegionLabel(index, count) {
+            var label = document.getElementById(`region-label-${index}`);
+            if (label) {
+                label.textContent = count > 0 ? `${count} silent regions detected` : '';
+            }
         }
 
         function renderControlInterface(jsonObj, containerId) {
@@ -280,7 +395,6 @@ local statusTemplate = [[
                 </div>`;
             container.appendChild(controlTable);
 
-            // Poll /status every 2 seconds to update UI
             setInterval(function() {
                 fetch('/status').then(response => response.text()).then(html => {
                     var parser = new DOMParser();
@@ -380,6 +494,32 @@ local function executeCommand(command, callback, flag, resetFlag)
     end)
 end
 
+-- Javascript Handlers
+local creamJsHandler = class("creamJsHandler", turbo.web.RequestHandler)
+function creamJsHandler:get(jsFile)
+    local status, result = pcall(function()
+        local jsFilePath = config.CREAM_STATIC_DIRECTORY .. jsFile
+        cLOG(syslog.LOG_INFO, "Serving JS file: " .. jsFilePath)
+        local file = io.open(jsFilePath, "rb")
+        if file then
+            local content = file:read("*a")
+            file:close()
+            self:set_header("Content-Type", "text/javascript")
+            self:write(content)
+        else
+            self:set_status(404)
+            self:write("File not found")
+        end
+    end)
+    if not status then
+        cLOG(syslog.LOG_ERR, "JS handler error: " .. tostring(result) .. "\nStack: " .. debug.traceback())
+        self:set_status(500)
+        self:write("Internal server error")
+    end
+    self:finish()
+end
+
+
 -- Web Handlers
 local creamWebStatusHandler = class("creamWebStatusHandler", turbo.web.RequestHandler)
 function creamWebStatusHandler:get()
@@ -465,7 +605,7 @@ function creamWebStopHandler:get()
             CREAM.edit.current_recording = ""
         end
         executeCommand(command, function(result)
-            cLOG(syslog.LOG_DEBUG, "Stop command result: " .. result)
+            cLOG(syslog.LOG_DEBUG, "Stop command result: ", result)
         end, function() return false end)
         self:set_status(303)
         self:set_header("Location", "/status")
@@ -603,6 +743,7 @@ local creamWebApp = turbo.web.Application:new({
     {"/recordStop", creamWebRecordStopHandler},
     {"^/$", turbo.web.StaticFileHandler, "./html/index.html"},
     {"^/static/(.*)$", creamWavHandler},
+    {"^/js/(.*)$", creamJsHandler}, -- New route for JS files
 })
 
 -- Initialize CREAM and start server
