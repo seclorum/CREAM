@@ -53,6 +53,8 @@ reqs-lua:
 	luarocks install luajit-ffi-loader --tree=dist/aa-cream_1.0-1/opt/austrianAudio/
 	luarocks install luaposix --tree=dist/aa-cream_1.0-1/opt/austrianAudio/
 	luarocks install luastatic --tree=dist/local
+	luarocks install libtffi --tree=dist/aa-cream_1.0-1/opt/austrianAudio/ --verbose
+
 	luarocks path --tree=dist/aa-cream_1.0-1/opt/austrianAudio/
 
 trace:	./cream.${BUILD_ARCHITECTURE}
