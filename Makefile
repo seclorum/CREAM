@@ -4,13 +4,18 @@ CREAM_DIST_INST_DIR = dist/aa-cream_1.0-1/opt/austrianAudio/bin/
 LUA_SRC_FILES = ./main.lua ./config.lua ./cream.lua ./buildDate.lua ./mixer.lua ./devices.lua ./httpserver.lua ./util/geocalcs.lua ./util/time.lua ./util/tools.lua ./util/scantest.lua ./util/gpxmaker.lua ./util/lua_enumerable.lua ./util/average.lua ./util/filesystem.lua ./util/mobdebug.lua ./util/dateparse.lua ./util/debug.lua ./util/Logger.lua ./util/persistence.lua ./util/geocoords.lua ./util/noobhub.lua ./util/environment_debug.lua 
 
 
+ifeq ($(BUILD_ARCHITECTURE), aarch64)
+${CREAM_APP_TARGET}:	builddate
+	dist/local/bin/luastatic ${LUA_SRC_FILES} /usr/lib/aarch64-linux-gnu/libluajit-5.1.a /usr/lib/aarch64-linux-gnu/liblua5.1-cjson.a -I/usr/include/lua5.1  "-o ${CREAM_APP_TARGET}"
+endif
+
 ifeq ($(BUILD_ARCHITECTURE), armv7l)
-${CREAM_APP_TARGET}:
+${CREAM_APP_TARGET}:	builddate
 	dist/local/bin/luastatic ${LUA_SRC_FILES} /usr/lib/arm-linux-gnueabihf/libluajit-5.1.a /usr/lib/arm-linux-gnueabihf/liblua5.1-cjson.a -I/usr/include/lua5.1  "-o ${CREAM_APP_TARGET}"
 endif
 
 ifeq ($(BUILD_ARCHITECTURE), armv6l)
-${CREAM_APP_TARGET}:
+${CREAM_APP_TARGET}:	builddate
 	dist/local/bin/luastatic ${LUA_SRC_FILES} /usr/lib/arm-linux-gnueabihf/libluajit-5.1.a /usr/lib/arm-linux-gnueabihf/liblua5.1-cjson.a -I/usr/include/lua5.1  "-o ${CREAM_APP_TARGET}"
 endif
 
@@ -50,8 +55,8 @@ reqs-lua:
 	luarocks install luastatic --tree=dist/local
 	luarocks path --tree=dist/aa-cream_1.0-1/opt/austrianAudio/
 
-trace:	./cream.armv7l
-	strace -r -s 1024 -o /opt/austrianAudio/var/CREAM/`date +"%Y%m%d-%H%M%S"`-app_strace.log.txt ./cream.armv7l
+trace:	./cream.${BUILD_ARCHITECTURE}
+	strace -r -s 1024 -o /opt/austrianAudio/var/CREAM/`date +"%Y%m%d-%H%M%S"`-app_strace.log.txt ./cream.${BUILD_ARCHITECTURE}
 
 distributable:
 	cp -rfvp ${CREAM_APP_TARGET} ${CREAM_DIST_INST_DIR}
