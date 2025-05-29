@@ -488,7 +488,7 @@ function creamWebEmptyHandler:get()
             CREAM.edit.current_recording = ""
         end
         executeCommand(command, function(result)
-            cLOG(syslog.LOG_DEBUG, "Empty command result: " .. result)
+            cLOG(syslog.LOG_DEBUG, "Empty command result: ", result)
         end, function() return false end)
         self:set_status(303)
         self:set_header("Location", "/status")
