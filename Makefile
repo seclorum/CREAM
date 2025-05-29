@@ -30,6 +30,13 @@ builddate:
 run:
 	luajit main.lua
 
+tree:
+	mkdir -p /opt/austrianAudio/bin
+	mkdir -p /opt/austrianAudio/lib
+	mkdir -p /opt/austrianAudio/share
+	mkdir -p /opt/austrianAudio/var
+	tree -L 1 /opt/austrianAudio
+
 #test:
 #	luajit test.lua
 #
