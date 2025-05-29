@@ -1,76 +1,76 @@
 -- Import required modules
-local config = require("config")
-local turbo = require("turbo")
-local turbo_thread = require("turbo.thread")
-local io = require("io")
-local posix = require("posix")
-local syslog = require("posix.syslog")
-local cjson = require("cjson")
-local syscall = require("syscall")
-local socket = require("socket") -- For port checking
+local config = require("config") -- Configuration module for application settings
+local turbo = require("turbo") -- TurboLua web framework
+local turbo_thread = require("turbo.thread") -- Threading support for TurboLua
+local io = require("io") -- Standard I/O library
+local posix = require("posix") -- POSIX system calls
+local syslog = require("posix.syslog") -- System logging
+local cjson = require("cjson") -- JSON encoding/decoding
+local syscall = require("syscall") -- System call utilities
+local socket = require("socket") -- For port availability checking
 
 -- Global state variables
-local creamIsExecuting = false
-local creamIsPlaying = false
-local creamIsSynchronizing = false
+local creamIsExecuting = false -- Tracks if a recording is in progress
+local creamIsPlaying = false -- Tracks if audio playback is active
+local creamIsSynchronizing = false -- Tracks if synchronization is active
 
 -- Logging utility function
 local function cLOG(level, ...)
-    local message = table.concat({...}, " ")
-    syslog.syslog(level, message)
-    print(string.format("LOG:%d %s", level, message))
+    local message = table.concat({...}, " ") -- Concatenate log message arguments
+    syslog.syslog(level, message) -- Log to syslog
+    print(string.format("LOG:%d %s", level, message)) -- Print to console
 end
 
 -- Set sync partner based on hostname
 local function setSyncPartner()
-    local hostname = syscall.gethostname()
+    local hostname = syscall.gethostname() -- Get current hostname
     if hostname == "mix-o" then
-        config.CREAM_SYNC_PARTNER = "mix-j"
+        config.CREAM_SYNC_PARTNER = "mix-j" -- Set sync partner for mix-o
     elseif hostname == "mix-j" then
-        config.CREAM_SYNC_PARTNER = "mix-o"
+        config.CREAM_SYNC_PARTNER = "mix-o" -- Set sync partner for mix-j
     else
-        config.CREAM_SYNC_PARTNER = nil
+        config.CREAM_SYNC_PARTNER = nil -- No sync partner for unknown hosts
         cLOG(syslog.LOG_WARNING, "Unknown hostname, sync not supported: " .. hostname)
     end
 end
 setSyncPartner()
 
 -- Disable buffering for stdout
-io.stdout:setvbuf("no")
+io.stdout:setvbuf("no") -- Ensures immediate console output
 
 -- Load CREAM module
-local CREAM = require("cream")
+local CREAM = require("cream") -- Core CREAM module for audio handling
 
 -- Initialize command stack
-local cSTACK = turbo.structs.deque:new()
+local cSTACK = turbo.structs.deque:new() -- Command queue for initialization tasks
 
 -- Check if port is in use using Lua socket
 local function isPortInUse(port)
-    local sock, err = socket.bind("0.0.0.0", port)
+    local sock, err = socket.bind("0.0.0.0", port) -- Attempt to bind to port
     if sock then
-        sock:close()
-        return false
+        sock:close() -- Close socket if bind succeeds
+        return false -- Port is available
     end
     cLOG(syslog.LOG_DEBUG, "Port check error: " .. tostring(err))
-    return true
+    return true -- Port is in use
 end
 
 -- Initialize application
 cSTACK:append(function()
-    local hostname = syscall.gethostname()
-    config.dump()
-    syslog.setlogmask(syslog.LOG_DEBUG)
-    syslog.openlog(config.APP_NAME, syslog.LOG_SYSLOG)
+    local hostname = syscall.gethostname() -- Get hostname
+    config.dump() -- Dump configuration for debugging
+    syslog.setlogmask(syslog.LOG_DEBUG) -- Set syslog debug level
+    syslog.openlog(config.APP_NAME, syslog.LOG_SYSLOG) -- Initialize syslog
     cLOG(syslog.LOG_INFO, string.format("%s running on host: %s protocol version %s on %s:%d",
         config.APP_NAME, hostname, config.CREAM_PROTOCOL_VERSION,
-        config.CREAM_APP_SERVER_HOST, config.CREAM_APP_SERVER_PORT))
-    cLOG(syslog.LOG_INFO, config.CREAM_APP_VERSION)
+        config.CREAM_APP_SERVER_HOST, config.CREAM_APP_SERVER_PORT)) -- Log startup info
+    cLOG(syslog.LOG_INFO, config.CREAM_APP_VERSION) -- Log application version
 
     -- Initialize CREAM with error handling
     local status, err = pcall(function()
         CREAM.devices = CREAM.devices or { online = {}, init = function() end, dump = function() end }
-        CREAM.devices:init()
-        CREAM.devices:dump()
+        CREAM.devices:init() -- Initialize audio devices
+        CREAM.devices:dump() -- Dump device info
     end)
     if not status then
         cLOG(syslog.LOG_ERR, "Failed to initialize CREAM devices: " .. tostring(err) .. "\nStack: " .. debug.traceback())
@@ -85,12 +85,19 @@ local statusTemplate = [[
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CREAM::{{hostname}}</title>
-    <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
+    <!-- Load WaveSurfer.js and plugins from local static directory -->
+    <script src="/js/wavesurfer.js"></script>
     <script src="/js/regions.min.js"></script>
+    <script src="/js/envelope.min.js"></script>
+    <script src="/js/hover.min.js"></script>
+    <script src="/js/minimap.min.js"></script>
+    <script src="/js/spectrogram.min.js"></script>
+    <script src="/js/timeline.min.js"></script>
+    <script src="/js/zoom.min.js"></script>
     <style>
         body {
             font-family: 'Courier New', monospace;
-            background-color: {{backgroundColor}};
+            background-color: {{backgroundColor}}; /* Dynamic background based on hostname */
             color: white;
         }
         h1, h2, h3, h4, h5, h6 { color: #999999; }
@@ -154,6 +161,7 @@ local statusTemplate = [[
             display: flex;
             flex-wrap: wrap;
             gap: 5px;
+            align-items: center;
         }
         .waveform-button {
             padding: 5px 10px;
@@ -166,23 +174,52 @@ local statusTemplate = [[
         .waveform-button:hover {
             background-color: #777;
         }
-        . Rosalie {
-            background: rgba(0, 255, 0, 0.3); /* Green tint for silent regions */
+        .waveform-button.active {
+            background-color: #4CAF50; /* Green when active */
+        }
+        .silence-params {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
+        .silence-params input {
+            width: 60px;
+            padding: 2px;
+            font-size: 12px;
         }
         .region-label {
             font-size: 12px;
             color: #ccc;
             margin-left: 10px;
         }
+        .ws-region {
+            background: rgba(0, 255, 0, 0.3); /* Green tint for silent regions */
+        }
+        .ws-minimap {
+            margin-top: 5px;
+            background-color: #333;
+            border: 1px solid #444;
+        }
+        .ws-spectrogram {
+            margin-top: 5px;
+        }
+        .ws-timeline {
+            margin-top: 5px;
+        }
+        .ws-hover {
+            background: rgba(255, 255, 255, 0.2); /* Light cursor for hover */
+        }
     </style>
 </head>
 <body>
     <script>
+        // Toggle debug JSON container visibility
         function toggleContent() {
             var content = document.getElementById("json-container");
             content.style.display = content.style.display === "none" ? "block" : "none";
         }
 
+        // Generate background color based on hostname
         function generateBackgroundColor(str) {
             let hashCode = 0;
             for (let i = 0; i < str.length; i++) {
@@ -194,8 +231,9 @@ local statusTemplate = [[
             return `rgb(${r},${g},${b})`;
         }
 
-        var jsonObject = {{{jsonData}}};
+        var jsonObject = {{{jsonData}}}; // JSON data from server
 
+        // Render JSON data with syntax highlighting
         function prettifyAndRenderJSON(jsonObj, containerId) {
             var container = document.getElementById(containerId);
             var jsonString = JSON.stringify(jsonObj, null, 2)
@@ -218,9 +256,10 @@ local statusTemplate = [[
             container.appendChild(preElement);
         }
 
+        // Custom silence detection using audio buffer
         function detectSilence(audioBuffer, sampleRate, threshold, minSilenceDuration) {
-            const samples = audioBuffer.getChannelData(0);
-            const minSamples = minSilenceDuration * sampleRate;
+            const samples = audioBuffer.getChannelData(0); // Use first channel
+            const minSamples = minSilenceDuration * sampleRate; // Convert duration to samples
             const regions = [];
             let silenceStart = null;
             const thresholdAmplitude = Math.pow(10, threshold / 20); // Convert dB to amplitude
@@ -229,14 +268,14 @@ local statusTemplate = [[
                 const amplitude = Math.abs(samples[i]);
                 if (amplitude < thresholdAmplitude) {
                     if (silenceStart === null) {
-                        silenceStart = i;
+                        silenceStart = i; // Start of silence
                     }
                 } else {
                     if (silenceStart !== null && (i - silenceStart) >= minSamples) {
                         regions.push({
                             start: silenceStart / sampleRate,
                             end: i / sampleRate
-                        });
+                        }); // Add silence region
                     }
                     silenceStart = null;
                 }
@@ -245,15 +284,16 @@ local statusTemplate = [[
                 regions.push({
                     start: silenceStart / sampleRate,
                     end: samples.length / sampleRate
-                });
+                }); // Add final silence region
             }
             return regions;
         }
 
+        // Render waveform tracks with all plugins
         function renderWAVTracks(jsonObj, containerId) {
             var container = document.getElementById(containerId);
             container.innerHTML = '';
-            var tracks = (jsonObj.app.edit.Tracks || []).sort();
+            var tracks = (jsonObj.app.edit.Tracks || []).sort(); // Sort tracks alphabetically
             var wavTable = document.createElement("table");
             wavTable.border = "0";
             var waveformData = [];
@@ -266,6 +306,7 @@ local statusTemplate = [[
                 var linkClass = isCurrentRecording ? 'disabled' : 'link';
                 var waveformId = 'waveform-' + i;
 
+                // HTML for each track with waveform and controls
                 cell.innerHTML = `<li ${highlightStyle}>
                     <a class="${linkClass}" href="/play/${track}">${track}</a>
                     <div id="${waveformId}" class="waveform-container"></div>
@@ -275,6 +316,18 @@ local statusTemplate = [[
                         <button class="waveform-button" onclick="wavesurfers[${i}]?.skip(5)">+5s</button>
                         <button class="waveform-button silence-toggle" onclick="toggleSilenceDetection(${i})">Detect Silence</button>
                         <button class="waveform-button" onclick="clearRegions(${i})">Clear Regions</button>
+                        <div class="silence-params">
+                            <label>Threshold (dB):</label>
+                            <input type="number" id="silence-threshold-${i}" value="-40" step="1">
+                            <label>Min Duration (s):</label>
+                            <input type="number" id="silence-duration-${i}" value="0.5" step="0.1">
+                        </div>
+                        <button class="waveform-button envelope-toggle" onclick="toggleEnvelope(${i})">Toggle Envelope</button>
+                        <button class="waveform-button minimap-toggle" onclick="toggleMinimap(${i})">Toggle Minimap</button>
+                        <button class="waveform-button spectrogram-toggle" onclick="toggleSpectrogram(${i})">Toggle Spectrogram</button>
+                        <button class="waveform-button timeline-toggle" onclick="toggleTimeline(${i})">Toggle Timeline</button>
+                        <button class="waveform-button" onclick="zoomIn(${i})">Zoom In</button>
+                        <button class="waveform-button" onclick="zoomOut(${i})">Zoom Out</button>
                         <span class="region-label" id="region-label-${i}"></span>
                     </div></li>`;
 
@@ -286,6 +339,7 @@ local statusTemplate = [[
             window.wavesurfers = window.wavesurfers || [];
             waveformData.forEach(function(data) {
                 try {
+                    // Initialize WaveSurfer with all plugins
                     var wavesurfer = WaveSurfer.create({
                         container: '#' + data.waveformId,
                         waveColor: 'violet',
@@ -294,24 +348,75 @@ local statusTemplate = [[
                         responsive: true,
                         backend: 'MediaElement',
                         plugins: [
-                            WaveSurfer.regions.create()
+                            WaveSurfer.regions.create(), // Regions for marking and playing segments
+                            WaveSurfer.envelope.create({
+                                volume: 1.0, // Default volume
+                                fadeInStart: 0,
+                                fadeInEnd: 0,
+                                fadeOutStart: 0,
+                                fadeOutEnd: 0
+                            }), // Envelope for volume control
+                            WaveSurfer.hover.create({
+                                lineColor: '#fff',
+                                lineWidth: 2,
+                                labelBackground: '#555',
+                                labelColor: '#fff'
+                            }), // Hover cursor with time
+                            WaveSurfer.minimap.create({
+                                height: 30,
+                                waveColor: '#ddd',
+                                progressColor: '#999'
+                            }), // Minimap for overview
+                            WaveSurfer.spectrogram.create({
+                                container: '#' + data.waveformId + '-spectrogram',
+                                fftSamples: 512,
+                                labels: true
+                            }), // Spectrogram for frequency visualization
+                            WaveSurfer.timeline.create({
+                                container: '#' + data.waveformId + '-timeline'
+                            }), // Timeline for time axis
+                            WaveSurfer.zoom.create({
+                                zoom: 100 // Pixels per second
+                            }) // Zoom functionality
                         ]
                     });
 
-                    wavesurfer.load('/static/' + data.track);
+                    // Create containers for spectrogram and timeline
+                    var waveformContainer = document.getElementById(data.waveformId);
+                    var spectrogramDiv = document.createElement('div');
+                    spectrogramDiv.id = data.waveformId + '-spectrogram';
+                    spectrogramDiv.className = 'ws-spectrogram';
+                    waveformContainer.parentNode.insertBefore(spectrogramDiv, waveformContainer.nextSibling);
+                    var timelineDiv = document.createElement('div');
+                    timelineDiv.id = data.waveformId + '-timeline';
+                    timelineDiv.className = 'ws-timeline';
+                    waveformContainer.parentNode.insertBefore(timelineDiv, spectrogramDiv.nextSibling);
 
+                    wavesurfer.load('/static/' + data.track); // Load audio file
+
+                    // Initialize plugin states
                     wavesurfer.on('ready', function() {
-                        window.wavesurfers[data.index].isSilenceDetected = false;
+                        window.wavesurfers[data.index] = wavesurfer;
+                        wavesurfer.isSilenceDetected = false;
+                        wavesurfer.isMinimapVisible = true;
+                        wavesurfer.isSpectrogramVisible = false;
+                        wavesurfer.isTimelineVisible = false;
+                        wavesurfer.isEnvelopeApplied = false;
+                        wavesurfer.spectrogram.hide(); // Hide spectrogram by default
+                        wavesurfer.timeline.hide(); // Hide timeline by default
                     });
 
+                    // Play region on click
                     wavesurfer.on('region-click', function(region) {
                         wavesurfer.play(region.start, region.end);
                     });
 
+                    // Update region count label
                     wavesurfer.on('region-created', function() {
                         updateRegionLabel(data.index, Object.keys(wavesurfer.regions.list).length);
                     });
 
+                    // Log errors
                     wavesurfer.on('error', function(e) {
                         console.error('WaveSurfer error for ' + data.track + ':', e);
                     });
@@ -323,9 +428,15 @@ local statusTemplate = [[
             });
         }
 
+        // Toggle silence detection
         function toggleSilenceDetection(index) {
             var wavesurfer = window.wavesurfers[index];
             if (wavesurfer) {
+                var thresholdInput = document.getElementById(`silence-threshold-${index}`);
+                var durationInput = document.getElementById(`silence-duration-${index}`);
+                var threshold = parseFloat(thresholdInput.value) || -40;
+                var duration = parseFloat(durationInput.value) || 0.5;
+
                 if (wavesurfer.isSilenceDetected) {
                     wavesurfer.regions.clear();
                     wavesurfer.isSilenceDetected = false;
@@ -334,7 +445,7 @@ local statusTemplate = [[
                     updateRegionLabel(index, 0);
                 } else {
                     wavesurfer.getDecodedData().then(audioBuffer => {
-                        const regions = detectSilence(audioBuffer, audioBuffer.sampleRate, -40, 0.5);
+                        const regions = detectSilence(audioBuffer, audioBuffer.sampleRate, threshold, duration);
                         regions.forEach(function(region, idx) {
                             wavesurfer.regions.add({
                                 start: region.start,
@@ -356,6 +467,7 @@ local statusTemplate = [[
             }
         }
 
+        // Clear all regions
         function clearRegions(index) {
             var wavesurfer = window.wavesurfers[index];
             if (wavesurfer) {
@@ -367,6 +479,96 @@ local statusTemplate = [[
             }
         }
 
+        // Toggle envelope (fade-in/out)
+        function toggleEnvelope(index) {
+            var wavesurfer = window.wavesurfer[index];
+            if (wavesurfer) {
+                if (wavesurfer.isEnvelopeApplied) {
+                    wavesurfer.envelope.setFade(0, 0, 0, 0); // Remove envelope
+                    wavesurfer.isEnvelopeApplied = false;
+                    var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .envelope-toggle`);
+                    if (button) button.classList.remove('active');
+                } else {
+                    // Apply a simple fade-in/fade-out (2 seconds each)
+                    wavesurfer.envelope.setFade(2, 0, 2, 0);
+                    wavesurfer.isEnvelopeApplied = true;
+                    var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .envelope-toggle`);
+                    if (button) button.classList.add('active');
+                }
+            }
+        }
+
+        // Toggle minimap visibility
+        function toggleMinimap(index) {
+            var wavesurfer = window.wavesurfers[index];
+            if (wavesurfer) {
+                if (wavesurfer.isMinimapVisible) {
+                    wavesurfer.minimap.hide();
+                    wavesurfer.isMinimapVisible = false;
+                    var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .minimap-toggle`);
+                    if (button) button.classList.remove('active');
+                } else {
+                    wavesurfer.minimap.show();
+                    wavesurfer.isMinimapVisible = true;
+                    var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .minimap-toggle`);
+                    if (button) button.classList.add('active');
+                }
+            }
+        }
+
+        // Toggle spectrogram visibility
+        function toggleSpectrogram(index) {
+            var wavesurfer = window.wavesurfers[index];
+            if (wavesurfer) {
+                if (wavesurfer.isSpectrogramVisible) {
+                    wavesurfer.spectrogram.hide();
+                    wavesurfer.isSpectrogramVisible = false;
+                    var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .spectrogram-toggle`);
+                    if (button) button.classList.remove('active');
+                } else {
+                    wavesurfer.spectrogram.show();
+                    wavesurfer.isSpectrogramVisible = true;
+                    var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .spectrogram-toggle`);
+                    if (button) button.classList.add('active');
+                }
+            }
+        }
+
+        // Toggle timeline visibility
+        function toggleTimeline(index) {
+            var wavesurfer = window.wavesurfers[index];
+            if (wavesurfer) {
+                if (wavesurfer.isTimelineVisible) {
+                    wavesurfer.timeline.hide();
+                    wavesurfer.isTimelineVisible = false;
+                    var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .timeline-toggle`);
+                    if (button) button.classList.remove('active');
+                } else {
+                    wavesurfer.timeline.show();
+                    wavesurfer.isTimelineVisible = true;
+                    var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .timeline-toggle`);
+                    if (button) button.classList.add('active');
+                }
+            }
+        }
+
+        // Zoom in
+        function zoomIn(index) {
+            var wavesurfer = window.wavesurfers[index];
+            if (wavesurfer) {
+                wavesurfer.zoom.zoom(wavesurfer.zoom.getZoom() * 2);
+            }
+        }
+
+        // Zoom out
+        function zoomOut(index) {
+            var wavesurfer = window.wavesurfers[index];
+            if (wavesurfer) {
+                wavesurfer.zoom.zoom(wavesurfer.zoom.getZoom() / 2);
+            }
+        }
+
+        // Update region count label
         function updateRegionLabel(index, count) {
             var label = document.getElementById(`region-label-${index}`);
             if (label) {
@@ -374,6 +576,7 @@ local statusTemplate = [[
             }
         }
 
+        // Render control interface (Capture, Sync, Clear)
         function renderControlInterface(jsonObj, containerId) {
             var container = document.getElementById(containerId);
             container.innerHTML = '';
@@ -395,6 +598,7 @@ local statusTemplate = [[
                 </div>`;
             container.appendChild(controlTable);
 
+            // Poll /status every 2 seconds to update UI
             setInterval(function() {
                 fetch('/status').then(response => response.text()).then(html => {
                     var parser = new DOMParser();
@@ -409,6 +613,7 @@ local statusTemplate = [[
             }, 2000);
         }
 
+        // Render status (recording state)
         function renderStatus(jsonObj, containerId) {
             var container = document.getElementById(containerId);
             container.innerHTML = '';
@@ -424,10 +629,12 @@ local statusTemplate = [[
             container.appendChild(statusTable);
         }
 
+        // Handle track link clicks
         function openLink(fileName) {
             alert("Opening link: " + fileName);
         }
 
+        // Set background color based on hostname
         if (jsonObject.hostname === "mix-o") {
             document.body.style.backgroundColor = "#8B4000";
         } else if (jsonObject.hostname === "mix-j") {
@@ -436,6 +643,7 @@ local statusTemplate = [[
             document.body.style.backgroundColor = "#1b2a3f";
         }
 
+        // Initialize UI on page load
         document.addEventListener('DOMContentLoaded', function() {
             var collapsible = document.querySelector('.collapsible');
             if (collapsible) {
@@ -494,7 +702,7 @@ local function executeCommand(command, callback, flag, resetFlag)
     end)
 end
 
--- Javascript Handlers
+-- JavaScript Handler
 local creamJsHandler = class("creamJsHandler", turbo.web.RequestHandler)
 function creamJsHandler:get(jsFile)
     local status, result = pcall(function()
@@ -504,7 +712,7 @@ function creamJsHandler:get(jsFile)
         if file then
             local content = file:read("*a")
             file:close()
-            self:set_header("Content-Type", "text/javascript")
+            self:set_header("Content-Type", "text/javascript") -- Ensure correct MIME type
             self:write(content)
         else
             self:set_status(404)
@@ -518,7 +726,6 @@ function creamJsHandler:get(jsFile)
     end
     self:finish()
 end
-
 
 -- Web Handlers
 local creamWebStatusHandler = class("creamWebStatusHandler", turbo.web.RequestHandler)
@@ -562,7 +769,7 @@ function creamWebStatusHandler:get()
     self:finish()
 end
 function creamWebStatusHandler:on_finish()
-    collectgarbage("collect")
+    collectgarbage("collect") -- Clean up memory
 end
 
 local creamWebStartHandler = class("creamWebStartHandler", turbo.web.RequestHandler)
@@ -743,7 +950,7 @@ local creamWebApp = turbo.web.Application:new({
     {"/recordStop", creamWebRecordStopHandler},
     {"^/$", turbo.web.StaticFileHandler, "./html/index.html"},
     {"^/static/(.*)$", creamWavHandler},
-    {"^/js/(.*)$", creamJsHandler}, -- New route for JS files
+    {"^/js/(.*)$", creamJsHandler}
 })
 
 -- Initialize CREAM and start server
@@ -786,3 +993,4 @@ end
 -- Start the main loop and server
 turbo.ioloop.instance():add_timeout(turbo.util.gettimemonotonic() + config.CREAM_COMMAND_INTERVAL, creamMain)
 turbo.ioloop.instance():start()
+
