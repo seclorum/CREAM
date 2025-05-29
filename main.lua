@@ -330,7 +330,7 @@ local statusTemplate = [[
             renderStatus(jsonObject, "current-status");
             renderControlInterface(jsonObject, "control-interface");
             prettifyAndRenderJSON(jsonObject, "json-container");
-            renderWAVTracks(jsonObj, "wav-tracks");
+            renderWAVTracks(jsonObject, "wav-tracks");
         });
     </script>
     <div id="current-status"></div>
