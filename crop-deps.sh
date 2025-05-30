@@ -16,7 +16,6 @@ sudo apt-get install -y \
     openssl \
     curl \
     alsa-utils \
-    ipfs \
     build-essential \
     libssl-dev \
     git
@@ -36,18 +35,13 @@ fi
 
 # Install Lua modules
 echo "Installing Lua modules..."
-sudo luarocks install turbo
-sudo luarocks install luasql-sqlite3
-sudo luarocks install luafilesystem
-sudo luarocks install luaossl
-sudo luarocks install lua-cjson
-sudo luarocks install luaposix
-sudo luarocks install luasocket
-
-# Ensure WAV directory exists
-echo "Creating WAV directory..."
-sudo mkdir -p /home/user/wavs
-sudo chmod 755 /home/user/wavs
+#luarocks --verbose install turbo --local
+luarocks --verbose install luasql-sqlite3 --local
+luarocks --verbose install luafilesystem --local
+luarocks --verbose install luaossl --local
+luarocks --verbose install lua-cjson --local
+luarocks --verbose install luaposix --local
+luarocks --verbose install luasocket --local
 
 # Initialize IPFS if not already done
 if [ ! -d ~/.ipfs ]; then
