@@ -40,6 +40,11 @@ tree:
 	chmod 777 /opt/austrianAudio/var/CREAM/
 	tree -L 1 /opt/austrianAudio
 
+
+wavesurfer-deps:
+	cd /opt/austrianAudio/var/static/js/
+	npm install --save wavesurfer.js 
+ 
 #test:
 #	luajit test.lua
 #
