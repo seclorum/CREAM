@@ -59,17 +59,16 @@ local fruits = {
       svg = '<svg width="100" height="100" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="#C71585" /><circle cx="45" cy="45" r="10" fill="#FFFFFF" /><circle cx="55" cy="55" r="10" fill="#FFFFFF" /></svg>'
     }
   },
-  ["6"] = 
-  {
+  ["6"] = {
     name = "Nutritious Nuttikins",
-    brief = "Woody chuncks of zestful nutrient.",
+    brief = "Rugged, woody nuggets bursting with zesty nutrients.",
     details = {
-      origin = "Forest Deep",
-      flavor = "Can also start a fire with it.",
-      description = "These are rare, treasure them",
-      svg = '<svg width="100" height="100" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="#C71585" /><circle cx="45" cy="45" r="10" fill="#FFFFFF" /><circle cx="55" cy="55" r="10" fill="#FFFFFF" /></svg>'
+      origin = "Ancient groves of Forest Deep",
+      flavor = "Nutty, zesty, with a smoky warmth that sparks the palate",
+      description = "Nutritious Nuttikins are elusive treasures of the forest, their gnarled, woody shells hiding a vibrant, nutrient-packed core. Their smoky zest can ignite both your taste buds and, legend says, a campfire in a pinch!",
+      svg = '<svg width="100" height="100" viewBox="0 0 100 100"><ellipse cx="50" cy="50" rx="40" ry="30" fill="#8B4513" /><path d="M30 50 C30 60, 70 60, 70 50 S50 40, 30 50" fill="#228B22" /><path d="M45 45 L55 55 M55 45 L45 55" stroke="#FFD700" stroke-width="3" /></svg>'
     }
-  } 
+  }
 }
 
 -- Mustache template for the homepage
