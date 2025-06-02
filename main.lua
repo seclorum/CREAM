@@ -1022,6 +1022,42 @@ local statusTemplate = [[
 ]]
 
 
+local function NEWexecuteCommand(command, callback, flag, resetFlag)
+    turbo.ioloop.instance():add_callback(function()
+        local thread = turbo.thread.Thread(function(th)
+            cLOG(syslog.LOG_INFO, "Executing command: " .. command)
+            local process = io.popen(command .. " 2>&1 ; echo $?", "r")
+            local output = {}
+            local exitCode
+            for line in process:lines() do
+                if line:match("^%d+$") then
+                    exitCode = tonumber(line)
+                else
+                    output[#output + 1] = line
+                end
+                if flag and not flag() then break end
+                coroutine.yield()
+            end
+            process:close()
+            output = table.concat(output, "\n")
+            if exitCode and exitCode ~= 0 then
+                cLOG(syslog.LOG_ERR, "Command failed with exit code " .. exitCode .. ": " .. command .. "\nOutput: " .. output)
+            else
+                cLOG(syslog.LOG_INFO, "Command execution stopped: " .. command .. "\nOutput: " .. output)
+            end
+            if resetFlag then
+                resetFlag(false)
+            end
+            if callback then
+                callback(output)
+            end
+            th:stop()
+        end)
+        thread:wait_for_finish()
+    end)
+end
+
+
 -- Utility function to execute shell commands
 local function executeCommand(command, callback, flag, resetFlag)
     turbo.ioloop.instance():add_callback(function()
