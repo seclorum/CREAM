@@ -77,7 +77,8 @@ cSTACK:append(function()
     end
 end)
 
--- Mustache template for the status page
+-- Mustache template for the status page, unpkg.com
+--[[
 local statusTemplate = [[
 <!DOCTYPE html>
 <html lang="en">
@@ -811,7 +812,8 @@ local statusTemplate = [[
 </html>
 ]]
 
---[[
+
+
 local statusTemplate = [[
 <!DOCTYPE html>
 <html lang="en">
@@ -1351,7 +1353,7 @@ local function creamMain()
             end
         end
     end
-    turbo.ioloop.instance():add_timeout(turbo.util.gettimemonotonic() + config.CREAM_COMMAND_INTERVAL, creamMain)
+    --turbo.ioloop.instance():add_timeout(turbo.util.gettimemonotonic() + config.CREAM_COMMAND_INTERVAL, creamMain)
 end
 
 -- Start the main loop and server
