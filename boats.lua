@@ -1,6 +1,6 @@
 -- Lua script for "CountsYerBoats" game using LuaJIT (Lua 5.1)
 -- Fixes bug where players with same boat count (e.g., 100 boats) overwrite markers
--- Uses iTerm2 dimensions: 189 columns x 32 rows
+-- Uses iTerm2 dimensions: 132 columns (out of 189) x 32 rows
 -- Plots player boat counts with initials alongside all boat_groups terms for reference
 -- Ensures unique Y-positions for all points, even with identical X-values
 -- Text-based interface for selecting players and updating boat counts
@@ -76,7 +76,7 @@ local function plot_ascii(players_data, refs_data, term_width, term_height, max_
     local num_terms = #all_data
     for i, point in ipairs(all_data) do
         local x = math.floor((point.x / max_x) * (term_width - 1)) + 1
-        local y = term_height - math.floor((i - 1) * (term_height - 1) / (num_terms - 1))
+        local y = term_height - i + 1
         if x >= 1 and x <= term_width and y >= 1 and y <= term_height then
             grid[y][x] = point.marker
         end
@@ -91,15 +91,16 @@ local function plot_ascii(players_data, refs_data, term_width, term_height, max_
         for x = 1, term_width do
             row = row .. grid[y][x]
         end
-        local idx = math.floor((term_height - y) * (num_terms - 1) / (num_terms - 1)) + 1
-        if idx <= #all_data then
+        local idx = term_height - y + 1
+        if idx <= #all_data and idx >= 1 then
             row = row .. "  " .. all_data[idx].term .. " (" .. all_data[idx].x .. " boats)"
         end
         print(row)
     end
     local x_axis = string.rep("-", term_width)
     print(x_axis)
-    local x_labels = "0" .. string.rep(" ", math.floor(term_width / 2) - 1) .. math.floor(max_x / 2) .. string.rep(" ", term_width - math.floor(term_width / 2) - 2) .. max_x
+    local half_x = math.floor(max_x / 2)
+    local x_labels = "0" .. string.rep(" ", math.floor(term_width / 2) - 1) .. half_x .. string.rep(" ", term_width - math.floor(term_width / 2) - string.len(tostring(half_x)) - 1) .. max_x
     print(x_labels)
 end
 
@@ -123,7 +124,7 @@ end
 local function counts_yer_boats()
     local current_player = 1 -- Start with first player
     local max_boats = 100    -- Max X-axis value for plotting (matches boat_groups max)
-    local term_width = 150   -- Plot width in characters (fits 189-column iTerm2)
+    local term_width = 100   -- Plot width in characters (uses 132 of 189 columns, reserving space for labels)
     local term_height = 25   -- Plot height (fits 32-row iTerm2, accommodates players + boat_groups)
     
     while true do
@@ -180,12 +181,11 @@ end
 counts_yer_boats()
 
 -- Notes:
+-- Uses 132 columns (term_width = 100 for plot + ~32 for labels) out of 189
 -- Fixes bug where players with same boat count (e.g., 100 boats) overwrote markers
 -- Combines all data (players + boat_groups) into one sorted array for unique Y-positions
--- Uses iTerm2 dimensions: 189 cols (150 for plot + labels), 32 rows (25 for plot)
 -- Players marked with initials (e.g., 'P'), reference terms with 'o'
 -- Labels show player names with boat_groups term and boat count
 -- Terminal clearing uses 'clear'; for Windows, replace with 'cls' if needed
--- Adjust term_width, term_height if terminal size changes
 -- Players table supports N entries; add more players by extending the table
 -- Future graph types can be added by modifying plot_ascii (e.g., bar, line)
