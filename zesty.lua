@@ -1,3 +1,4 @@
+-- a mockup model for reference in CREAM
 -- Require TurboLua for web server and Mustache templating
 local turbo = require("turbo")
 local mustache = require("turbo.web").Mustache
@@ -427,104 +428,14 @@ function ImportHandler:get()
 end
 
 function ImportHandler:post()
-    log(string.format("Handling POST request for import fruits from %s", self.request.remote_ip or "unknown IP"))
-    
-    -- Get uploaded files
-    local files = self.request.files or {}
-    --log(string.format("Files table: %s", turbo.util.inspect(files))) -- Debug: Inspect files structure
-    
-    -- Extract file data from the 'file' field
-    local file_data
-    if files.file and #files.file > 0 then
-        file_data = files.file[1].body
-        log(string.format("File data length: %d bytes, filename: %s", #file_data, files.file[1].filename or "unknown"))
-    end
-    
-    -- Validate file upload
-    if not file_data or #file_data == 0 then
-        log("Validation failed: No file uploaded or file is empty")
-        self:set_status(400)
-        local html = mustache.render(import_fruit_template, { error = "Please upload a valid Lua file" })
-        self:write(html)
-        log("Import fruits form rendered with error")
-        return
-    end
-    
-    -- Save uploaded file temporarily
-    local temp_file = os.tmpname()
-    local f, err = io.open(temp_file, "w")
-    if not f then
-        log(string.format("Failed to write temporary file: %s", err))
-        self:set_status(500)
-        local html = mustache.render(import_fruit_template, { error = "Server error: Unable to process file" })
-        self:write(html)
-        log("Import fruits form rendered with error")
-        return
-    end
-    f:write(file_data)
-    f:close()
-
-    -- Load and validate the Lua file
-    local chunk, load_err = loadfile(temp_file)
-    if not chunk then
-        log(string.format("Validation failed: Invalid Lua file: %s", load_err))
-        os.remove(temp_file)
-        self:set_status(400)
-        local html = mustache.render(import_fruit_template, { error = "Invalid Lua file: " .. tostring(load_err) })
-        self:write(html)
-        log("Import fruits form rendered with error")
-        return
-    end
-
-    -- Execute the Lua file to get the fruits table
-    local success, new_fruits = pcall(chunk)
-    os.remove(temp_file)
-    if not success or type(new_fruits) ~= "table" then
-        log("Validation failed: Lua file did not return a valid table")
-        self:set_status(400)
-        local html = mustache.render(import_fruit_template, { error = "Lua file must return a valid fruits table" })
-        self:write(html)
-        log("Import fruits form rendered with error")
-        return
-    end
-
-    -- Validate the structure of the new fruits table
-    for id, fruit in pairs(new_fruits) do
-        if type(id) ~= "string" or not id:match("^%d+$") or
-           type(fruit) ~= "table" or
-           type(fruit.name) ~= "string" or
-           type(fruit.brief) ~= "string" or
-           type(fruit.details) ~= "table" or
-           type(fruit.details.origin) ~= "string" or
-           type(fruit.details.flavor) ~= "string" or
-           type(fruit.details.description) ~= "string" or
-           type(fruit.details.svg) ~= "string" then
-            log(string.format("Validation failed: Invalid fruit data for ID %s", id))
-            self:set_status(400)
-            local html = mustache.render(import_fruit_template, { error = "Invalid fruit data structure for ID " .. id })
-            self:write(html)
-            log("Import fruits form rendered with error")
-            return
-        end
-    end
-
-    -- Update the fruits table
-    fruits = new_fruits
-    log("Successfully imported new fruits table")
-    -- Redirect to the homepage
-    self:redirect("/")
-    log("Redirected to homepage after importing fruits")
-end
-
-
-function ImportHandler:post1()
   log(string.format("Handling POST request for import fruits from %s", self.request.remote_ip or "unknown IP"))
-  -- Get uploaded file from request.files
+
+  -- Get uploaded files
   local files = self.request.files or {}
   local file_data = files.file and files.file[1] and files.file[1].body
 
   -- Validate file upload
-  if not file_data then
+  if not file_data or #file_data == 0 then
     log("Validation failed: No file uploaded or file is empty")
     self:set_status(400)
     local html = mustache.render(import_fruit_template, { error = "Please upload a valid Lua file" })
@@ -547,23 +458,20 @@ function ImportHandler:post1()
   f:write(file_data)
   f:close()
 
-  -- Load and validate the Lua file
-  local chunk, load_err = loadfile(temp_file)
-  if not chunk then
-    log(string.format("Validation failed: Invalid Lua file: %s", load_err))
-    os.remove(temp_file)
-    self:set_status(400)
-    local html = mustache.render(import_fruit_template, { error = "Invalid Lua file: " .. tostring(load_err) })
-    self:write(html)
-    log("Import fruits form rendered with error")
-    return
-  end
+  -- Create a sandboxed environment to safely execute the Lua file
+  local sandbox_env = {}
+  local success, new_fruits = pcall(function()
+    -- Load and execute the file in the sandboxed environment
+    setfenv(dofile(temp_file), sandbox_env)
+    return sandbox_env.fruits
+  end)
 
-  -- Execute the Lua file to get the fruits table
-  local success, new_fruits = pcall(chunk)
+  -- Clean up the temporary file
   os.remove(temp_file)
+
+  -- Check if the file execution was successful and returned a table
   if not success or type(new_fruits) ~= "table" then
-    log("Validation failed: Lua file did not return a valid table")
+    log(string.format("Validation failed: Lua file did not return a valid table: %s", tostring(new_fruits)))
     self:set_status(400)
     local html = mustache.render(import_fruit_template, { error = "Lua file must return a valid fruits table" })
     self:write(html)
@@ -582,7 +490,7 @@ function ImportHandler:post1()
        type(fruit.details.flavor) ~= "string" or
        type(fruit.details.description) ~= "string" or
        type(fruit.details.svg) ~= "string" then
-      log(string.format("Validation failed: Invalid fruit data for ID %s", id))
+      log(string.format("Validation failed: Invalid fruit data structure for ID %s", id))
       self:set_status(400)
       local html = mustache.render(import_fruit_template, { error = "Invalid fruit data structure for ID " .. id })
       self:write(html)

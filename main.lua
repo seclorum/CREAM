@@ -66,14 +66,14 @@ local statusTemplate = [[
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CREAM::{{hostname}}</title>
     <!-- WaveSurfer.js and plugins -->
- <script src="/wavesurfer.min.js" onerror="console.error('Failed to load wavesurfer.min.js'); logPluginStatus('wavesurfer')"></script>
-    <script src="/regions.min.js" onerror="console.error('Failed to load regions.min.js'); logPluginStatus('regions')"></script>
-    <script src="/envelope.min.js" onerror="console.error('Failed to load envelope.min.js'); logPluginStatus('envelope')"></script>
-    <script src="/hover.min.js" onerror="console.error('Failed to load hover.min.js'); logPluginStatus('hover')"></script>
-    <script src="/minimap.min.js" onerror="console.error('Failed to load minimap.min.js'); logPluginStatus('minimap')"></script>
-    <script src="/spectrogram.min.js" onerror="console.error('Failed to load spectrogram.min.js'); logPluginStatus('spectrogram')"></script>
-    <script src="/timeline.min.js" onerror="console.error('Failed to load timeline.min.js'); logPluginStatus('timeline')"></script>
-    <script src="/zoom.min.js" onerror="console.error('Failed to load zoom.min.js'); logPluginStatus('zoom')"></script>
+ <script src="wavesurfer.min.js" onerror="console.error('Failed to load wavesurfer.min.js'); logPluginStatus('wavesurfer')"></script>
+    <script src="regions.min.js" onerror="console.error('Failed to load regions.min.js'); logPluginStatus('regions')"></script>
+    <script src="envelope.min.js" onerror="console.error('Failed to load envelope.min.js'); logPluginStatus('envelope')"></script>
+    <script src="hover.min.js" onerror="console.error('Failed to load hover.min.js'); logPluginStatus('hover')"></script>
+    <script src="minimap.min.js" onerror="console.error('Failed to load minimap.min.js'); logPluginStatus('minimap')"></script>
+    <script src="spectrogram.min.js" onerror="console.error('Failed to load spectrogram.min.js'); logPluginStatus('spectrogram')"></script>
+    <script src="timeline.min.js" onerror="console.error('Failed to load timeline.min.js'); logPluginStatus('timeline')"></script>
+    <script src="zoom.min.js" onerror="console.error('Failed to load zoom.min.js'); logPluginStatus('zoom')"></script>
     <script>
         // Log plugin status for debugging
         function logPluginStatus(plugin) {
@@ -550,6 +550,253 @@ local statusTemplate = [[
 ]]
 
 -- Execute shell commands asynchronously
+
+
+local statusTemplate = [[
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CREAM::{{hostname}}</title>
+    <script src="wavesurfer.min.js"></script>
+    <script>
+        console.log('WaveSurfer core load attempt at ' + new Date().toISOString());
+        try {
+            console.log('WaveSurfer before envelope:', typeof WaveSurfer, Object.keys(WaveSurfer || {}));
+            if (typeof WaveSurfer !== 'undefined') {
+                console.log('WaveSurfer core loaded at ' + new Date().toISOString());
+            }
+        } catch (e) {
+            console.error('WaveSurfer core error:', e);
+        }
+    </script>
+    <script src="envelope.min.js"></script>
+    <script>
+        console.log('Envelope plugin load attempt at ' + new Date().toISOString());
+        try {
+            fetch('envelope.min.js').then(res => res.text()).then(text => {
+                console.log('Envelope.js content length: ' + text.length + ' chars');
+            });
+            console.log('WaveSurfer after envelope:', typeof WaveSurfer, Object.keys(WaveSurfer || {}));
+            if (typeof WaveSurfer !== 'undefined' && WaveSurfer.envelope) {
+                console.log('Envelope plugin loaded at ' + new Date().toISOString());
+            } else {
+                console.log('Envelope plugin not loaded at ' + new Date().toISOString());
+            }
+        } catch (e) {
+            console.error('Envelope plugin error:', e);
+        }
+    </script>
+    <style>
+        body { font-family: 'Courier New', monospace; background-color: #1b2a3f; color: white; }
+        h1 { color: #999999; }
+        .waveform-container { height: 100px; margin: 10px 0; background-color: #222; border: 1px solid #444; }
+        .waveform-controls { display: flex; gap: 5px; flex-wrap: wrap; }
+        .waveform-button { padding: 5px 10px; background-color: #555; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        .waveform-button:hover { background-color: #777; }
+        .waveform-button.active { background-color: #4CAF50; }
+        .error-message { color: red; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <script>
+        // Wait for plugins
+        function waitForPlugins(callback) {
+            const plugins = ['envelope'];
+            let attempts = 0;
+            function checkPlugin() {
+                if (typeof WaveSurfer !== 'undefined' && plugins.every(p => WaveSurfer[p])) {
+                    console.log('All plugins loaded at ' + new Date().toISOString() + ':', Object.keys(WaveSurfer));
+                    callback();
+                } else {
+                    attempts++;
+                    if (attempts < 50) {
+                        setTimeout(checkPlugin, 100);
+                    } else {
+                        console.error('Plugin loading timeout at ' + new Date().toISOString() + ':', {
+                            envelope: !!WaveSurfer.envelope
+                        });
+                        callback();
+                    }
+                }
+            }
+            console.log('Starting plugin check at ' + new Date().toISOString());
+            checkPlugin();
+        }
+
+        // Render tracks
+        function renderWAVTracks(jsonObj, containerId) {
+            console.log('Rendering tracks at ' + new Date().toISOString());
+            var container = document.getElementById(containerId);
+            container.innerHTML = '';
+            var tracks = (jsonObj.app.edit.Tracks || []).sort();
+            var wavTable = document.createElement('table');
+            wavTable.border = '0';
+            var waveformData = [];
+
+            tracks.forEach(function(track, i) {
+                var row = wavTable.insertRow(0);
+                var cell = row.insertCell(0);
+                var waveformId = 'waveform-' + i;
+                cell.innerHTML = `
+                    <div>
+                        <a href="/play/${track}">${track}</a>
+                        <div id="${waveformId}" class="waveform-container"></div>
+                        <div class="waveform-controls">
+                            <button class="waveform-button" onclick="wavesurfers[${i}]?.playPause()">Play/Pause</button>
+                            <button class="waveform-button envelope-toggle" onclick="toggleEnvelope(${i})">Toggle Envelope</button>
+                            <span class="error-message" id="error-${i}"></span>
+                        </div>
+                    </div>`;
+                waveformData.push({ index: i, waveformId: waveformId, track: track });
+            });
+
+            container.appendChild(wavTable);
+
+            window.wavesurfers = window.wavesurfers || [];
+            waveformData.forEach(function(data) {
+                try {
+                    if (typeof WaveSurfer === 'undefined') {
+                        throw new Error('WaveSurfer.js not loaded');
+                    }
+                    var wavesurfer = WaveSurfer.create({
+                        container: '#' + data.waveformId,
+                        waveColor: 'violet',
+                        progressColor: 'purple',
+                        height: 100,
+                        responsive: true,
+                        plugins: [
+                            WaveSurfer.envelope ? WaveSurfer.envelope.create({ volume: 1.0 }) : null
+                        ].filter(p => p)
+                    });
+                    wavesurfer.load('/static/' + data.track);
+                    wavesurfer.on('ready', function() {
+                        console.log('Waveform ' + data.index + ' ready at ' + new Date().toISOString());
+                        window.wavesurfers[data.index] = wavesurfer;
+                        wavesurfer.isEnvelopeApplied = false;
+                    });
+                    wavesurfer.on('error', function(e) {
+                        document.getElementById('error-' + data.index).textContent = 'Error: ' + e.message;
+                    });
+                    window.wavesurfers[data.index] = wavesurfer;
+                } catch (e) {
+                    console.error('WaveSurfer init error for ' + data.track + ':', e);
+                    document.getElementById('error-' + data.index).textContent = 'Failed to load waveform: ' + e.message;
+                }
+            });
+        }
+
+        // Toggle envelope
+        function toggleEnvelope(index) {
+            console.log('Toggling envelope for index ' + index + ' at ' + new Date().toISOString());
+            var wavesurfer = window.wavesurfers[index];
+            if (wavesurfer && wavesurfer.envelope) {
+                wavesurfer.isEnvelopeApplied = !wavesurfer.isEnvelopeApplied;
+                wavesurfer.envelope.setFade(wavesurfer.isEnvelopeApplied ? 2 : 0, 0, wavesurfer.isEnvelopeApplied ? 2 : 0, 0);
+                var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .envelope-toggle`);
+                if (button) button.classList.toggle('active', wavesurfer.isEnvelopeApplied);
+            } else {
+                document.getElementById('error-' + index).textContent = 'Envelope unavailable: Plugin not loaded';
+            }
+        }
+
+        // Render control interface
+        function renderControlInterface(jsonObj, containerId) {
+            console.log('Rendering control interface at ' + new Date().toISOString());
+            var container = document.getElementById(containerId);
+            container.innerHTML = '';
+            var isRecording = jsonObj.app.edit.current_recording && jsonObj.app.edit.current_recording !== '';
+            container.innerHTML = `
+                <div>
+                    <button class="interface-button ${isRecording ? 'stop' : 'start'}">
+                        <a href="${isRecording ? '/stop' : '/start'}">${isRecording ? 'STOP CAPTURE' : 'CAPTURE'}</a>
+                    </button>
+                </div>`;
+        }
+
+        // Start status polling
+        function startStatusPolling() {
+            console.log('Starting status polling at ' + new Date().toISOString());
+            setInterval(function() {
+                console.log('Status poll at ' + new Date().toISOString());
+                fetch('/status', { cache: 'no-store' }).then(response => {
+                    if (!response.ok) {
+                        throw new Error('Status fetch failed: ' + response.status);
+                    }
+                    return response.text();
+                }).then(html => {
+                    var parser = new DOMParser();
+                    var doc = parser.parseFromString(html, 'text/html');
+                    var newJsonScript = doc.querySelector('script').textContent.match(/var jsonObject = ({.*});/);
+                    if (newJsonScript) {
+                        var newJson = JSON.parse(newJsonScript[1]);
+                        renderControlInterface(newJson, 'control-interface');
+                    }
+                }).catch(err => {
+                    console.error('Status poll error:', err);
+                    document.getElementById('current-status').innerHTML += '<p class="error-message">Status update failed: ' + err.message + '</p>';
+                });
+            }, 2000);
+        }
+
+        // Initialize UI
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM content loaded at ' + new Date().toISOString());
+            waitForPlugins(function() {
+                console.log('Plugins check complete at ' + new Date().toISOString());
+                var jsonObject = {{{jsonData}}};
+                renderControlInterface(jsonObject, 'control-interface');
+                renderWAVTracks(jsonObject, 'wav-tracks');
+                startStatusPolling();
+            });
+        });
+    </script>
+    <div id="current-status"></div>
+    <div id="control-interface"></div>
+    <div id="wav-tracks"></div>
+</body>
+</html>
+]]
+
+
+local function NEWexecuteCommand(command, callback, flag, resetFlag)
+    turbo.ioloop.instance():add_callback(function()
+        local thread = turbo.thread.Thread(function(th)
+            cLOG(syslog.LOG_INFO, "Executing command: " .. command)
+            local process = io.popen(command .. " 2>&1 ; echo $?", "r")
+            local output = {}
+            local exitCode
+            for line in process:lines() do
+                if line:match("^%d+$") then
+                    exitCode = tonumber(line)
+                else
+                    output[#output + 1] = line
+                end
+                if flag and not flag() then break end
+                coroutine.yield()
+            end
+            process:close()
+            output = table.concat(output, "\n")
+            if exitCode and exitCode ~= 0 then
+                cLOG(syslog.LOG_ERR, "Command failed with exit code " .. exitCode .. ": " .. command .. "\nOutput: " .. output)
+            else
+                cLOG(syslog.LOG_INFO, "Command execution stopped: " .. command .. "\nOutput: " .. output)
+            end
+            if resetFlag then
+                resetFlag(false)
+            end
+            if callback then
+                callback(output)
+            end
+            th:stop()
+        end)
+        thread:wait_for_finish()
+    end)
+end
+
+
+-- Utility function to execute shell commands
 local function executeCommand(command, callback, flag, resetFlag)
     turbo.ioloop.instance():add_callback(function()
         local thread = turbo_thread.Thread(function(th)
@@ -838,7 +1085,7 @@ local creamWebApp = turbo.web.Application:new({
     {"/synchronize", creamWebSynchronizeHandler},
     {"/play/(.*)$", creamWebPlayHandler},
     {"/favicon.ico", creamFaviconHandler},
-    {"^/.*\\.js(\\?.*)?/?$", creamJsHandler},
+    {"^/(.*%.js)$", turbo.web.StaticFileHandler, "./static/"},
     {"^/static/.*\\.wav$", creamWavHandler},
     {"^/$", turbo.web.StaticFileHandler, "./html/index.html"},
 })
