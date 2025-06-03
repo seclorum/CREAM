@@ -1,3 +1,4 @@
+-- a mockup model for reference in CREAM
 -- Require TurboLua for web server and Mustache templating
 local turbo = require("turbo")
 local mustache = require("turbo.web").Mustache

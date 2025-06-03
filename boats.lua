@@ -1,3 +1,4 @@
+-- a mockup model for reference in CREAM
 -- Lua script for "CountsYerBoats" game using LuaJIT (Lua 5.1)
 -- Integrates the boat_groups scale to map player boat counts to terms (e.g., Flotilla, Fleet)
 -- Text-based interface for selecting players and updating boat counts
