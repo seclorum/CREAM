@@ -105,7 +105,7 @@ local statusTemplate = [[
                 } else {
                     console.log(`WaveSurfer not loaded after ${attempts * 100}ms`);
                 }
-                if (attempts < 200) { // Extended timeout to 20s
+                if (attempts < 10) { // Extended timeout to 20s
                     attempts++;
                     setTimeout(checkPlugin, 100);
                 } else {
@@ -550,7 +550,7 @@ local statusTemplate = [[
 ]]
 
 -- Execute shell commands asynchronously
-local statusTemplate2 = [[
+local statusTemplateSimpleDebug = [[
 <!DOCTYPE html>
 <html lang="en">
 <head>
