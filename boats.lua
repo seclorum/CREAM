@@ -1,9 +1,8 @@
--- a mockup model for reference in CREAM
 -- Lua script for "CountsYerBoats" game using LuaJIT (Lua 5.1)
--- Integrates the boat_groups scale to map player boat counts to terms (e.g., Flotilla, Fleet)
+-- Integrates boat_groups table to map player boat counts to terms (e.g., Flotilla, Fleet)
+-- Plots player boat counts with initials as markers, alongside all boat_groups terms for reference
 -- Text-based interface for selecting players and updating boat counts
--- Plots boat counts with player initials as identifiable characters, using the boat_groups terms
--- Game loop rotates through players, updates scores, and plots with terms from the scale
+-- Game loop rotates through players, updates scores, and plots with full boat_groups scale
 
 -- Define boat_groups table for mapping boat counts to terms
 local boat_groups = {
@@ -45,8 +44,8 @@ local function get_player_initial(name)
 end
 
 -- Generalized ASCII plotting function
--- Arguments: data (table of {x, term, marker}), term_width, term_height, max_x, title
-local function plot_ascii(data, term_width, term_height, max_x, title)
+-- Arguments: players_data (table of {x, term, marker}), refs_data (table of {x, term}), term_width, term_height, max_x, title
+local function plot_ascii(players_data, refs_data, term_width, term_height, max_x, title)
     -- Create 2D grid for ASCII plot
     local grid = {}
     for y = 1, term_height do
@@ -56,11 +55,20 @@ local function plot_ascii(data, term_width, term_height, max_x, title)
         end
     end
 
-    -- Map data points to grid
-    local num_terms = #data
-    for i, point in ipairs(data) do
+    -- Map reference points (boat_groups terms) to grid with 'o' marker
+    local num_terms = #refs_data + #players_data
+    for i, point in ipairs(refs_data) do
         local x = math.floor((point.x / max_x) * (term_width - 1)) + 1
         local y = term_height - math.floor((i - 1) * (term_height - 1) / (num_terms - 1))
+        if x >= 1 and x <= term_width and y >= 1 and y <= term_height then
+            grid[y][x] = "o" -- Reference points marked with 'o'
+        end
+    end
+
+    -- Map player points to grid with their initials
+    for i, point in ipairs(players_data) do
+        local x = math.floor((point.x / max_x) * (term_width - 1)) + 1
+        local y = term_height - math.floor((#refs_data + i - 1) * (term_height - 1) / (num_terms - 1))
         if x >= 1 and x <= term_width and y >= 1 and y <= term_height then
             grid[y][x] = point.marker -- Use player's initial as marker
         end
@@ -68,15 +76,23 @@ local function plot_ascii(data, term_width, term_height, max_x, title)
 
     -- Print plot
     print(title)
-    print("Y: Player Index | X: Number of Boats (0 to " .. max_x .. ")")
+    print("Y: Index | X: Number of Boats (0 to " .. max_x .. ")")
+    print("(* = Players, o = Reference Terms)")
+    local all_terms = {}
+    for i, point in ipairs(refs_data) do
+        table.insert(all_terms, { term = point.term, x = point.x })
+    end
+    for i, point in ipairs(players_data) do
+        table.insert(all_terms, { term = point.term .. " (" .. get_boat_term(point.x) .. ")", x = point.x })
+    end
     for y = 1, term_height do
         local row = ""
         for x = 1, term_width do
             row = row .. grid[y][x]
         end
         local idx = math.floor((term_height - y) * (num_terms - 1) / (term_height - 1)) + 1
-        if idx <= #data then
-            row = row .. "  " .. data[idx].term .. " (" .. data[idx].x .. " boats, " .. get_boat_term(data[idx].x) .. ")"
+        if idx <= #all_terms then
+            row = row .. "  " .. all_terms[idx].term .. " (" .. all_terms[idx].x .. " boats)"
         end
         print(row)
     end
@@ -107,7 +123,7 @@ local function counts_yer_boats()
     local current_player = 1 -- Start with first player
     local max_boats = 100    -- Max X-axis value for plotting (matches boat_groups max)
     local term_width = 70    -- Plot width in characters
-    local term_height = 10   -- Plot height (should be >= number of players)
+    local term_height = 15   -- Plot height (should be >= number of players + boat_groups terms)
     
     while true do
         -- Display interface
@@ -133,17 +149,22 @@ local function counts_yer_boats()
             end
         elseif input == "p" then
             -- Prepare data for plotting
-            local plot_data = {}
+            local players_data = {}
             for i, player in ipairs(players) do
-                table.insert(plot_data, {
+                table.insert(players_data, {
                     x = player.boats,
                     term = player.name,
                     marker = get_player_initial(player.name)
                 })
             end
-            -- Plot scores
+            local refs_data = {}
+            for num, info in pairs(boat_groups) do
+                table.insert(refs_data, { x = num, term = info.term })
+            end
+            table.sort(refs_data, function(a, b) return a.x < b.x end)
+            -- Plot scores with reference terms
             os.execute("clear")
-            plot_ascii(plot_data, term_width, term_height, max_boats, "CountsYerBoats - Player Scores")
+            plot_ascii(players_data, refs_data, term_width, term_height, max_boats, "CountsYerBoats - Player Scores vs. Boat Scale")
             print("\nPress Enter to return to menu...")
             io.read("*line")
         elseif input == "q" then
@@ -158,11 +179,11 @@ end
 counts_yer_boats()
 
 -- Notes:
--- Uses boat_groups table to map boat counts to terms (e.g., 5 boats -> Group)
--- Players enter boat counts via 's' command, validated against max_boats
--- Plot uses player initials as markers (e.g., 'P' for Player One)
--- Plot labels show player name, boat count, and corresponding term
--- Generalized plot_ascii function supports future graph types (e.g., bar, line)
+-- Plots all boat_groups terms as reference points ('o') alongside player points ('*')
+-- Player points use initials (e.g., 'P' for Player One) for identification
+-- Labels show player names with corresponding boat_groups term and boat count
+-- Generalized plot_ascii function accepts separate player and reference data for flexibility
 -- Terminal clearing uses 'clear'; for Windows, replace with 'cls' if needed
 -- Adjust max_boats, term_width, term_height for larger/smaller games or terminals
 -- Players table supports N entries; add more players by extending the table
+-- Future graph types can be added by modifying plot_ascii (e.g., bar, line)
