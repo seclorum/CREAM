@@ -16,7 +16,7 @@ _M.CREAM_SYNC_PARTNER = "mix-o"
 _M.CREAM_HOST = "localhost"
 _M.CREAM_COMMAND_PORT = arg[2] or 8080
 
-_M.CREAM_STATIC_DIRECTORY = "/opt/austrianAudio/var/static/js/"
+_M.CREAM_STATIC_DIRECTORY = "/opt/austrianAudio/var/static/"
 
 _M.dump = function()
     print("App name: \"" .. _M.APP_NAME .. 

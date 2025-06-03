@@ -1,84 +1,63 @@
 -- Import required modules
-local config = require("config") -- Configuration module for application settings
+local config = require("config") -- Application configuration settings
 local turbo = require("turbo") -- TurboLua web framework
-local turbo_thread = require("turbo.thread") -- Threading support for TurboLua
+local turbo_thread = require("turbo.thread") -- Threading support
 local io = require("io") -- Standard I/O library
 local posix = require("posix") -- POSIX system calls
 local syslog = require("posix.syslog") -- System logging
 local cjson = require("cjson") -- JSON encoding/decoding
 local syscall = require("syscall") -- System call utilities
-local socket = require("socket") -- For port availability checking
+local socket = require("socket") -- Port availability checking
 
 -- Global state variables
-local creamIsExecuting = false -- Tracks if a recording is in progress
-local creamIsPlaying = false -- Tracks if audio playback is active
-local creamIsSynchronizing = false -- Tracks if synchronization is active
+local state = {
+    isExecuting = false, -- Tracks if recording is in progress
+    isPlaying = false, -- Tracks if audio playback is active
+    isSynchronizing = false -- Tracks if synchronization is active
+}
 
 -- Logging utility function
 local function cLOG(level, ...)
-    local message = table.concat({...}, " ") -- Concatenate log message arguments
+    local message = table.concat({...}, " ") -- Concatenate arguments into a single message
     syslog.syslog(level, message) -- Log to syslog
-    print(string.format("LOG:%d %s", level, message)) -- Print to console
+    print(string.format("LOG:%d %s", level, message)) -- Log to console for debugging
 end
 
 -- Set sync partner based on hostname
 local function setSyncPartner()
-    local hostname = syscall.gethostname() -- Get current hostname
+    local hostname = syscall.gethostname()
     if hostname == "mix-o" then
-        config.CREAM_SYNC_PARTNER = "mix-j" -- Set sync partner for mix-o
+        config.CREAM_SYNC_PARTNER = "mix-j"
     elseif hostname == "mix-j" then
-        config.CREAM_SYNC_PARTNER = "mix-o" -- Set sync partner for mix-j
+        config.CREAM_SYNC_PARTNER = "mix-o"
     else
-        config.CREAM_SYNC_PARTNER = nil -- No sync partner for unknown hosts
+        config.CREAM_SYNC_PARTNER = nil
         cLOG(syslog.LOG_WARNING, "Unknown hostname, sync not supported: " .. hostname)
     end
 end
 setSyncPartner()
 
--- Disable buffering for stdout
-io.stdout:setvbuf("no") -- Ensures immediate console output
+-- Disable stdout buffering for immediate output
+io.stdout:setvbuf("no")
 
--- Load CREAM module
-local CREAM = require("cream") -- Core CREAM module for audio handling
+-- Load CREAM module for audio handling
+local CREAM = require("cream")
 
 -- Initialize command stack
-local cSTACK = turbo.structs.deque:new() -- Command queue for initialization tasks
+local cSTACK = turbo.structs.deque:new()
 
--- Check if port is in use using Lua socket
+-- Check if a port is in use
 local function isPortInUse(port)
-    local sock, err = socket.bind("0.0.0.0", port) -- Attempt to bind to port
+    local sock, err = socket.bind("0.0.0.0", port)
     if sock then
-        sock:close() -- Close socket if bind succeeds
-        return false -- Port is available
+        sock:close()
+        return false
     end
     cLOG(syslog.LOG_DEBUG, "Port check error: " .. tostring(err))
-    return true -- Port is in use
+    return true
 end
 
--- Initialize application
-cSTACK:append(function()
-    local hostname = syscall.gethostname() -- Get hostname
-    config.dump() -- Dump configuration for debugging
-    syslog.setlogmask(syslog.LOG_DEBUG) -- Set syslog debug level
-    syslog.openlog(config.APP_NAME, syslog.LOG_SYSLOG) -- Initialize syslog
-    cLOG(syslog.LOG_INFO, string.format("%s running on host: %s protocol version %s on %s:%d",
-        config.APP_NAME, hostname, config.CREAM_PROTOCOL_VERSION,
-        config.CREAM_APP_SERVER_HOST, config.CREAM_APP_SERVER_PORT)) -- Log startup info
-    cLOG(syslog.LOG_INFO, config.CREAM_APP_VERSION) -- Log application version
-
-    -- Initialize CREAM with error handling
-    local status, err = pcall(function()
-        CREAM.devices = CREAM.devices or { online = {}, init = function() end, dump = function() end }
-        CREAM.devices:init() -- Initialize audio devices
-        CREAM.devices:dump() -- Dump device info
-    end)
-    if not status then
-        cLOG(syslog.LOG_ERR, "Failed to initialize CREAM devices: " .. tostring(err) .. "\nStack: " .. debug.traceback())
-    end
-end)
-
--- Mustache template for the status page, unpkg.com
---[[
+-- Mustache template for the status page
 local statusTemplate = [[
 <!DOCTYPE html>
 <html lang="en">
@@ -86,268 +65,140 @@ local statusTemplate = [[
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CREAM::{{hostname}}</title>
-    <!-- Load WaveSurfer.js and plugins with validation -->
-    <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js" onerror="console.error('Failed to load wavesurfer.min.js')"></script>
-<script>
-    try {
-        if (typeof WaveSurfer !== 'undefined') {
-            console.log('WaveSurfer core loaded successfully');
+    <!-- WaveSurfer.js and plugins -->
+ <script src="/wavesurfer.min.js" onerror="console.error('Failed to load wavesurfer.min.js'); logPluginStatus('wavesurfer')"></script>
+    <script src="/regions.min.js" onerror="console.error('Failed to load regions.min.js'); logPluginStatus('regions')"></script>
+    <script src="/envelope.min.js" onerror="console.error('Failed to load envelope.min.js'); logPluginStatus('envelope')"></script>
+    <script src="/hover.min.js" onerror="console.error('Failed to load hover.min.js'); logPluginStatus('hover')"></script>
+    <script src="/minimap.min.js" onerror="console.error('Failed to load minimap.min.js'); logPluginStatus('minimap')"></script>
+    <script src="/spectrogram.min.js" onerror="console.error('Failed to load spectrogram.min.js'); logPluginStatus('spectrogram')"></script>
+    <script src="/timeline.min.js" onerror="console.error('Failed to load timeline.min.js'); logPluginStatus('timeline')"></script>
+    <script src="/zoom.min.js" onerror="console.error('Failed to load zoom.min.js'); logPluginStatus('zoom')"></script>
+    <script>
+        // Log plugin status for debugging
+        function logPluginStatus(plugin) {
+            console.log(`Plugin ${plugin} status:`, {
+                WaveSurfer: typeof WaveSurfer !== 'undefined',
+                [plugin]: WaveSurfer ? !!WaveSurfer[plugin] : false,
+                timestamp: new Date().toISOString()
+            });
         }
-    } catch (e) {
-        console.error('WaveSurfer core failed to initialize:', e);
-    }
-</script>
-<script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.min.js" onerror="console.error('Failed to load regions.min.js')"></script>
-<script>
-    try {
-        if (typeof WaveSurfer !== 'undefined' && WaveSurfer.regions) {
-            console.log('Regions plugin loaded successfully');
-        }
-    } catch (e) {
-        console.error('Regions plugin failed to initialize:', e);
-    }
-</script>
-<script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/envelope.min.js" onerror="console.error('Failed to load envelope.min.js')"></script>
-<script>
-    try {
-        if (typeof WaveSurfer !== 'undefined' && WaveSurfer.envelope) {
-            console.log('Envelope plugin loaded successfully');
-        }
-    } catch (e) {
-        console.error('Envelope plugin failed to initialize:', e);
-    }
-</script>
-<script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/hover.min.js" onerror="console.error('Failed to load hover.min.js')"></script>
-<script>
-    try {
-        if (typeof WaveSurfer !== 'undefined' && WaveSurfer.hover) {
-            console.log('Hover plugin loaded successfully');
-        }
-    } catch (e) {
-        console.error('Hover plugin failed to initialize:', e);
-    }
-</script>
-<script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/minimap.min.js" onerror="console.error('Failed to load minimap.min.js')"></script>
-<script>
-    try {
-        if (typeof WaveSurfer !== 'undefined' && WaveSurfer.minimap) {
-            console.log('Minimap plugin loaded successfully');
-        }
-    } catch (e) {
-        console.error('Minimap plugin failed to initialize:', e);
-    }
-</script>
-<script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/spectrogram.min.js" onerror="console.error('Failed to load spectrogram.min.js')"></script>
-<script>
-    try {
-        if (typeof WaveSurfer !== 'undefined' && WaveSurfer.spectrogram) {
-            console.log('Spectrogram plugin loaded successfully');
-        }
-    } catch (e) {
-        console.error('Spectrogram plugin failed to initialize:', e);
-    }
-</script>
-<script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/timeline.min.js" onerror="console.error('Failed to load timeline.min.js')"></script>
-<script>
-    try {
-        if (typeof WaveSurfer !== 'undefined' && WaveSurfer.timeline) {
-            console.log('Timeline plugin loaded successfully');
-        }
-    } catch (e) {
-        console.error('Timeline plugin failed to initialize:', e);
-    }
-</script>
-<script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/zoom.min.js" onerror="console.error('Failed to load zoom.min.js')"></script>
-<script>
-    try {
-        if (typeof WaveSurfer !== 'undefined' && WaveSurfer.zoom) {
-            console.log('Zoom plugin loaded successfully');
-        }
-    } catch (e) {
-        console.error('Zoom plugin failed to initialize:', e);
-    }
-</script>
 
-    <style>
-        body {
-            font-family: 'Courier New', monospace;
-            background-color: {{backgroundColor}};
-            color: white;
+        // Wait for plugins with extended timeout and detailed logging
+        function waitForPlugins(callback) {
+            const plugins = ['regions', 'envelope', 'hover', 'minimap', 'spectrogram', 'timeline', 'zoom'];
+            let attempts = 0;
+            function checkPlugin() {
+                if (typeof WaveSurfer !== 'undefined') {
+                    console.log('WaveSurfer loaded:', Object.keys(WaveSurfer || {}));
+                    const loadedPlugins = plugins.filter(p => WaveSurfer[p]);
+                    const missingPlugins = plugins.filter(p => !WaveSurfer[p]);
+                    console.log(`Plugins status after ${attempts * 100}ms:`, {
+                        loaded: loadedPlugins,
+                        missing: missingPlugins
+                    });
+                    if (missingPlugins.length === 0) {
+                        console.log('All plugins loaded successfully');
+                        callback();
+                        return;
+                    }
+                } else {
+                    console.log(`WaveSurfer not loaded after ${attempts * 100}ms`);
+                }
+                if (attempts < 200) { // Extended timeout to 20s
+                    attempts++;
+                    setTimeout(checkPlugin, 100);
+                } else {
+                    console.error('Plugin loading timeout:', {
+                        WaveSurfer: typeof WaveSurfer !== 'undefined',
+                        regions: !!WaveSurfer?.regions,
+                        envelope: !!WaveSurfer?.envelope,
+                        hover: !!WaveSurfer?.hover,
+                        minimap: !!WaveSurfer?.minimap,
+                        spectrogram: !!WaveSurfer?.spectrogram,
+                        timeline: !!WaveSurfer?.timeline,
+                        zoom: !!WaveSurfer?.zoom
+                    });
+                    document.getElementById('current-status').innerHTML += '<p class="error-message">Error: Some plugins failed to load. Check console for details.</p>';
+                    callback(); // Proceed even if plugins are missing
+                }
+            }
+            console.log('Starting plugin check');
+            checkPlugin();
         }
+    </script>
+    <style>
+        body { font-family: 'Courier New', monospace; background-color: {{backgroundColor}}; color: white; }
         h1, h2, h3, h4, h5, h6 { color: #999999; }
         a:link, a:visited { color: black; }
-        #json-container {
-            font-family: 'Courier New', Courier, monospace;
-            white-space: pre-wrap;
-            background-color: #f9f9f9;
-            display: none;
-            padding: 0 18px;
-            overflow: hidden;
-            border: 1px solid #ddd;
-        }
-        .collapsible {
-            cursor: pointer;
-            padding: 18px;
-            text-align: left;
-            border: 1px solid #ddd;
-            margin-bottom: 16px;
-        }
-        .string { color: black; }
-        .number { color: orange; }
-        .key { color: blue; font-weight: bold; }
-        .boolean { color: brown; }
-        .null { color: white; }
-        .link { color: blue; text-decoration: underline; cursor: pointer; }
+        #json-container { font-family: 'Courier New', monospace; white-space: pre-wrap; background-color: #f9f9f9; display: none; padding: 0 18px; border: 1px solid #ddd; }
+        .collapsible { cursor: pointer; padding: 18px; border: 1px solid #ddd; margin-bottom: 16px; }
+        .string { color: black; } .number { color: orange; } .key { color: blue; font-weight: bold; }
+        .boolean { color: brown; } .null { color: white; } .link { color: blue; text-decoration: underline; cursor: pointer; }
         .highlight { background-color: orange; }
         .control-surface { display: flex; }
         .interface-button {
-            width: 150px;
-            padding: 10px 20px;
-            margin: 10px;
-            font-size: 16px;
-            text-align: center;
-            text-transform: uppercase;
-            cursor: pointer;
-            border: 2px solid #fff;
-            border-radius: 5px;
-            background-color: #444;
-            color: #fff;
-            transition: background-color 0.3s, border-color 0.3s, color 0.666s;
+            width: 150px; padding: 10px 20px; margin: 10px; font-size: 16px; text-align: center;
+            text-transform: uppercase; cursor: pointer; border: 2px solid #fff; border-radius: 5px;
+            background-color: #444; color: #fff; transition: background-color 0.3s, border-color 0.3s, color 0.666s;
         }
-        .interface-button:hover {
-            background-color: #fff;
-            color: #333;
-        }
+        .interface-button:hover { background-color: #fff; color: #333; }
         .start { background-color: #A7F9AB; border-color: #4CAF50; }
         .stop { background-color: #FBB1AB; border-color: #f44336; }
         .empty { background-color: #F9D4B4; border-color: white; }
-        .synchronize { background-color: #CBB1FE; border-color:: green; }
+        .synchronize { background-color: #CBB1FE; border-color: green; }
         .synchronizing { background-color: green; border-color: #CBB1FE; }
-        }
-        .waveform-container {
-            width: 100%;
-            height: 100px;
-            margin: 10px 0;
-            background-color: #222;
-            border: 1px solid #444;
-        }
-        .waveform-controls {
-            margin-top: 5px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 5px;
-            align-items: center;
-        }
-        .waveform-button {
-            padding: 5px 10px;
-            background-color: #555;
-            color: white;
-            border: none;
-            border-radius: 3px;
-            cursor: pointer;
-        }
-        .waveform-button:hover {
-            background-color:: #777;
-        }
-        .waveform-button.active {
-            background-color: #4CAF50;
-        }
-        .silence-params {
-            display: flex;
-            gap: 5px;
-            align-items: center;
-        }
-        .silence-params input {
-            width: 60px;
-            padding: 2px;
-            font-size: 12px;
-        }
-        .region-label {
-            font-size: 12px;
-            color: #ccc;
-            margin-left: 10px;
-        }
-        .ws-region {
-            background: rgba(0, 255, 0, 0.3);
-        }
-        .ws-minimap {
-            margin-top: 5px;
-            background-color: #333;
-            border: 1px solid #444;
-        }
-        .ws-spectrogram {
-            margin-top: 10px;
-        }
-        .ws-timeline {
-            margin-top: 5px;
-        }
-        .ws-hover {
-            background: rgba(255, 255, 255, 0.2);
-        }
-        .error-message {
-            color: red;
-            font-size: 12px;
-            margin-left: 10px;
-        }
+        .waveform-container { width: 100%; height: 100px; margin: 10px 0; background-color: #222; border: 1px solid #444; }
+        .waveform-controls { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+        .waveform-button { padding: 5px 10px; background-color: #555; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        .waveform-button:hover { background-color: #777; }
+        .waveform-button.active { background-color: #4CAF50; }
+        .silence-params { display: flex; gap: 5px; align-items: center; }
+        .silence-params input { width: 60px; padding: 2px; font-size: 12px; }
+        .region-label { font-size: 12px; color: #ccc; margin-left: 10px; }
+        .ws-region { background: rgba(0, 255, 0, 0.3); }
+        .ws-minimap { margin-top: 5px; background-color: #333; border: 1px solid #444; }
+        .ws-spectrogram { margin-top: 10px; }
+        .ws-timeline { margin-top: 5px; }
+        .ws-hover { background: rgba(255, 255, 255, 0.2); }
+        .error-message { color: red; font-size: 12px; margin-left: 10px; }
     </style>
 </head>
 <body>
     <script>
-        // Log final plugin status after all scripts load
-        window.addEventListener('load"', function() {
-            console.log('Final plugins status after load:', {
-                regions: !!WaveSurfer.regions,
-                envelope: !!WaveSurfer.envelope,
-                hover: !!WaveSurfer.hover,
-                minimap: !!WaveSurfer.minimap,
-                spectrogram: !!WaveSurfer.spectrogram,
-                timeline: !!WaveSurfer.timeline,
-                zoom: !!WaveSurfer.zoom
-            });
-        });
-
-        // Wait for all plugins to load
+        // Wait for WaveSurfer plugins to load
         function waitForPlugins(callback) {
             const plugins = ['regions', 'envelope', 'hover', 'minimap', 'spectrogram', 'timeline', 'zoom'];
-            let loaded = 0;
+            let attempts = 0;
             function checkPlugin() {
                 if (typeof WaveSurfer !== 'undefined' && plugins.every(p => WaveSurfer[p])) {
                     console.log('All plugins loaded:', Object.keys(WaveSurfer));
                     callback();
+                } else if (attempts < 100) {
+                    attempts++;
+                    setTimeout(checkPlugin, 100);
                 } else {
-                    loaded++;
-                    if (loaded < 100) { // Retry up to 10s
-                        setTimeout(checkPlugin, 100);
-                    } else {
-                        console.error('Plugin loading timeout:', {
-                            regions: !!WaveSurfer.regions,
-                            envelope: !!WaveSurfer.envelope,
-                            hover: !!WaveSurfer.hover,
-                            minimap: !!WaveSurfer.minimap,
-                            spectrogram: !!WaveSurfer.spectrogram,
-                            timeline: !!WaveSurfer.timeline,
-                            zoom: !!WaveSurfer.zoom
-                        });
-                        document.getElementById('current-status').innerHTML += '<p class="error-message">Error: Some plugins failed to load. Check console for details.</p>';
-                        callback(); // Proceed anyway
-                    }
+                    console.error('Plugin loading timeout:', {
+                        regions: !!WaveSurfer.regions, envelope: !!WaveSurfer.envelope, hover: !!WaveSurfer.hover,
+                        minimap: !!WaveSurfer.minimap, spectrogram: !!WaveSurfer.spectrogram, timeline: !!WaveSurfer.timeline, zoom: !!WaveSurfer.zoom
+                    });
+                    document.getElementById('current-status').innerHTML += '<p class="error-message">Error: Some plugins failed to load.</p>';
+                    callback();
                 }
             }
             checkPlugin();
         }
 
-        // Toggle debug JSON container visibility
+        // Toggle JSON debug container
         function toggleContent() {
             var content = document.getElementById("json-container");
             content.style.display = content.style.display === 'none' ? 'block' : 'none';
         }
 
-        // Generate background color based on hostname
+        // Generate background color from hostname
         function generateBackgroundColor(str) {
             let hashCode = 0;
-            for (let i = 0; i < str.length; i++) {
-                hashCode = str.charCodeAt(i) + ((hashCode << 5) - hashCode);
-            }
+            for (let i = 0; i < str.length; i++) hashCode = str.charCodeAt(i) + ((hashCode << 5) - hashCode);
             const r = (hashCode & 0xFF0000) >> 16;
             const g = (hashCode & 0x00FF00) >> 8;
             const b = hashCode & 0x0000FF;
@@ -356,63 +207,51 @@ local statusTemplate = [[
 
         var jsonObject = {{{jsonData}}};
 
-        // Render JSON data with syntax highlighting
+        // Render JSON with syntax highlighting
         function prettifyAndRenderJSON(jsonObj, containerId) {
             var container = document.getElementById(containerId);
-            var jsonString = JSON.stringify(jsonObj, null, 2)
-                .replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
+            var jsonString = JSON.stringify(jsonObj, null, 2).replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
             var prettyJson = jsonString.replace(
                 /("(\\u[a-f0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
-                function (match) {
+                match => {
                     var cls = /^"/.test(match) ? (/:$/.test(match) ? 'key' : 'string') :
                               /true|false/.test(match) ? 'boolean' :
                               /null/.test(match) ? 'null' : 'number';
                     return '<span class="' + cls + '">' + match + '</span>';
                 }
             );
-            prettyJson = prettyJson.replace(/"Tracks": \[\s*((?:"[^"]*",?\s*)+)\]/g, function (match, p1) {
+            prettyJson = prettyJson.replace(/"Tracks": \[\s*((?:"[^"]*",?\s*)+)\]/g, (match, p1) => {
                 var links = p1.replace(/"([^"]*)"/g, '<span class="link" onclick="openLink(\'$1\')">$1</span>');
                 return '"Tracks": [' + links + ']';
             });
-            var preElement = document.createElement("pre");
-            preElement.innerHTML = prettyJson;
-            container.appendChild(preElement);
+            container.innerHTML = '<pre>' + prettyJson + '</pre>';
         }
 
-        // Custom silence detection using audio buffer
+        // Detect silence in audio buffer
         function detectSilence(audioBuffer, sampleRate, threshold, minSilenceDuration) {
             const samples = audioBuffer.getChannelData(0);
             const minSamples = minSilenceDuration * sampleRate;
             const regions = [];
             let silenceStart = null;
             const thresholdAmplitude = Math.pow(10, threshold / 20);
-
             for (let i = 0; i < samples.length; i++) {
                 const amplitude = Math.abs(samples[i]);
                 if (amplitude < thresholdAmplitude) {
-                    if (silenceStart === null) {
-                        silenceStart = i;
-                    }
+                    if (silenceStart === null) silenceStart = i;
                 } else {
                     if (silenceStart !== null && (i - silenceStart) >= minSamples) {
-                        regions.push({
-                            start: silenceStart / sampleRate,
-                            end: i / sampleRate
-                        });
+                        regions.push({ start: silenceStart / sampleRate, end: i / sampleRate });
                     }
                     silenceStart = null;
                 }
             }
             if (silenceStart !== null && (samples.length - silenceStart) >= minSamples) {
-                regions.push({
-                    start: silenceStart / sampleRate,
-                    end: samples.length / sampleRate
-                });
+                regions.push({ start: silenceStart / sampleRate, end: samples.length / sampleRate });
             }
             return regions;
         }
 
-        // Render waveform tracks with all plugins
+        // Render waveform tracks
         function renderWAVTracks(jsonObj, containerId) {
             var container = document.getElementById(containerId);
             container.innerHTML = '';
@@ -420,15 +259,13 @@ local statusTemplate = [[
             var wavTable = document.createElement("table");
             wavTable.border = "0";
             var waveformData = [];
-
-            tracks.forEach(function(track, i) {
+            tracks.forEach((track, i) => {
                 var row = wavTable.insertRow(0);
                 var cell = row.insertCell(0);
                 var isCurrentRecording = jsonObj.app.edit.current_recording === track;
                 var highlightStyle = isCurrentRecording ? 'style="background-color: red;"' : '';
                 var linkClass = isCurrentRecording ? 'disabled' : 'link';
                 var waveformId = 'waveform-' + i;
-
                 cell.innerHTML = `<li ${highlightStyle}>
                     <a class="${linkClass}" href="/play/${track}">${track}</a>
                     <div id="${waveformId}" class="waveform-container"></div>
@@ -453,19 +290,13 @@ local statusTemplate = [[
                         <span class="region-label" id="region-label-${i}"></span>
                         <span class="error-message" id="error-${i}"></span>
                     </div></li>`;
-
                 waveformData.push({ index: i, waveformId: waveformId, track: track });
             });
-
             container.appendChild(wavTable);
-
             window.wavesurfers = window.wavesurfers || [];
-            waveformData.forEach(function(data) {
+            waveformData.forEach(data => {
                 try {
-                    if (typeof WaveSurfer === 'undefined') {
-                        throw new Error('WaveSurfer.js failed to load');
-                    }
-
+                    if (typeof WaveSurfer === 'undefined') throw new Error('WaveSurfer.js failed to load');
                     var wavesurfer = WaveSurfer.create({
                         container: '#' + data.waveformId,
                         waveColor: 'violet',
@@ -474,39 +305,15 @@ local statusTemplate = [[
                         responsive: true,
                         backend: 'MediaElement',
                         plugins: [
-                            WaveSurfer.regions ? WaveSurfer.regions.create() : null,
-                            WaveSurfer.envelope ? WaveSurfer.envelope.create({
-                                volume: 1.0,
-                                fadeInStart: 0,
-                                fadeInEnd: 0,
-                                fadeOutStart: 0,
-                                fadeOutEnd: 0
-                            }) : null,
-                            WaveSurfer.hover ? WaveSurfer.hover.create({
-                                lineColor: '#fff',
-                                lineWidth: 2,
-                                labelBackground: '#555',
-                                labelColor: '#fff'
-                            }) : null,
-                            WaveSurfer.minimap ? WaveSurfer.minimap.create({
-                                height: 30,
-                                waveColor: '#ddd',
-                                progressColor: '#999'
-                            }) : null,
-                            WaveSurfer.spectrogram ? WaveSurfer.spectrogram.create({
-                                container: '#' + data.waveformId + '-spectrogram',
-                                fftSamples: 512,
-                                labels: true
-                            }) : null,
-                            WaveSurfer.timeline ? WaveSurfer.timeline.create({
-                                container: '#' + data.waveformId + '-timeline'
-                            }) : null,
-                            WaveSurfer.zoom ? WaveSurfer.zoom.create({
-                                zoom: 100
-                            }) : null
-                        ].filter(plugin => plugin !== null)
+                            WaveSurfer.regions?.create(),
+                            WaveSurfer.envelope?.create({ volume: 1.0, fadeInStart: 0, fadeInEnd: 0, fadeOutStart: 0, fadeOutEnd: 0 }),
+                            WaveSurfer.hover?.create({ lineColor: '#fff', lineWidth: 2, labelBackground: '#555', labelColor: '#fff' }),
+                            WaveSurfer.minimap?.create({ height: 30, waveColor: '#ddd', progressColor: '#999' }),
+                            WaveSurfer.spectrogram?.create({ container: '#' + data.waveformId + '-spectrogram', fftSamples: 512, labels: true }),
+                            WaveSurfer.timeline?.create({ container: '#' + data.waveformId + '-timeline' }),
+                            WaveSurfer.zoom?.create({ zoom: 100 })
+                        ].filter(plugin => plugin)
                     });
-
                     var waveformContainer = document.getElementById(data.waveformId);
                     var spectrogramDiv = document.createElement('div');
                     spectrogramDiv.id = data.waveformId + '-spectrogram';
@@ -516,10 +323,8 @@ local statusTemplate = [[
                     timelineDiv.id = data.waveformId + '-timeline';
                     timelineDiv.className = 'ws-timeline';
                     waveformContainer.parentNode.insertBefore(timelineDiv, spectrogramDiv.nextSibling);
-
                     wavesurfer.load('/static/' + data.track);
-
-                    wavesurfer.on('ready', function() {
+                    wavesurfer.on('ready', () => {
                         window.wavesurfers[data.index] = wavesurfer;
                         wavesurfer.isSilenceDetected = false;
                         wavesurfer.isMinimapVisible = true;
@@ -529,21 +334,14 @@ local statusTemplate = [[
                         if (wavesurfer.spectrogram) wavesurfer.spectrogram.hide();
                         if (wavesurfer.timeline) wavesurfer.timeline.hide();
                     });
-
                     if (wavesurfer.regions) {
-                        wavesurfer.on('region-click', function(region) {
-                            wavesurfer.play(region.start, region.end);
-                        });
-                        wavesurfer.on('region-created', function() {
-                            updateRegionLabel(data.index, Object.keys(wavesurfer.regions.list).length);
-                        });
+                        wavesurfer.on('region-click', region => wavesurfer.play(region.start, region.end));
+                        wavesurfer.on('region-created', () => updateRegionLabel(data.index, Object.keys(wavesurfer.regions.list).length));
                     }
-
-                    wavesurfer.on('error', function(e) {
+                    wavesurfer.on('error', e => {
                         console.error('WaveSurfer error for ' + data.track + ':', e);
                         document.getElementById('error-' + data.index).textContent = 'Error: ' + e.message;
                     });
-
                     window.wavesurfers[data.index] = wavesurfer;
                 } catch (e) {
                     console.error('Failed to initialize WaveSurfer for ' + data.track + ':', e);
@@ -560,29 +358,22 @@ local statusTemplate = [[
                 var durationInput = document.getElementById(`silence-duration-${index}`);
                 var threshold = parseFloat(thresholdInput.value) || -40;
                 var duration = parseFloat(durationInput.value) || 0.5;
-
                 if (wavesurfer.isSilenceDetected) {
                     wavesurfer.regions.clear();
                     wavesurfer.isSilenceDetected = false;
-                    var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .silence-toggle`);
-                    if (button) button.classList.remove('active');
+                    document.querySelector(`#waveform-${index} ~ .waveform-controls .silence-toggle`)?.classList.remove('active');
                     updateRegionLabel(index, 0);
                 } else {
                     wavesurfer.getDecodedData().then(audioBuffer => {
                         const regions = detectSilence(audioBuffer, audioBuffer.sampleRate, threshold, duration);
-                        regions.forEach(function(region, idx) {
+                        regions.forEach((region, idx) => {
                             wavesurfer.regions.add({
-                                start: region.start,
-                                end: region.end,
-                                color: 'rgba(0, 255, 0, 0.3)',
-                                data: { type: 'silence', index: idx },
-                                drag: false,
-                                resize: false
+                                start: region.start, end: region.end, color: 'rgba(0, 255, 0, 0.3)',
+                                data: { type: 'silence', index: idx }, drag: false, resize: false
                             });
                         });
                         wavesurfer.isSilenceDetected = true;
-                        var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .silence-toggle`);
-                        if (button) button.classList.add('active');
+                        document.querySelector(`#waveform-${index} ~ .waveform-controls .silence-toggle`)?.classList.add('active');
                         updateRegionLabel(index, regions.length);
                     }).catch(e => {
                         console.error('Silence detection failed for waveform ' + index + ':', e);
@@ -594,14 +385,13 @@ local statusTemplate = [[
             }
         }
 
-        // Clear all regions
+        // Clear regions
         function clearRegions(index) {
             var wavesurfer = window.wavesurfers[index];
             if (wavesurfer && wavesurfer.regions) {
                 wavesurfer.regions.clear();
                 wavesurfer.isSilenceDetected = false;
-                var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .silence-toggle`);
-                if (button) button.classList.remove('active');
+                document.querySelector(`#waveform-${index} ~ .waveform-controls .silence-toggle`)?.classList.remove('active');
                 updateRegionLabel(index, 0);
             }
         }
@@ -610,17 +400,9 @@ local statusTemplate = [[
         function toggleEnvelope(index) {
             var wavesurfer = window.wavesurfers[index];
             if (wavesurfer && wavesurfer.envelope) {
-                if (wavesurfer.isEnvelopeApplied) {
-                    wavesurfer.envelope.setFade(0, 0, 0, 0);
-                    wavesurfer.isEnvelopeApplied = false;
-                    var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .envelope-toggle`);
-                    if (button) button.classList.remove('active');
-                } else {
-                    wavesurfer.envelope.setFade(2, 0, 2, 0);
-                    wavesurfer.isEnvelopeApplied = true;
-                    var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .envelope-toggle`);
-                    if (button) button.classList.add('active');
-                }
+                wavesurfer.isEnvelopeApplied = !wavesurfer.isEnvelopeApplied;
+                wavesurfer.envelope.setFade(wavesurfer.isEnvelopeApplied ? 2 : 0, 0, wavesurfer.isEnvelopeApplied ? 2 : 0, 0);
+                document.querySelector(`#waveform-${index} ~ .waveform-controls .envelope-toggle`)?.classList.toggle('active', wavesurfer.isEnvelopeApplied);
             } else {
                 document.getElementById('error-' + index).textContent = 'Envelope unavailable: Envelope plugin not loaded';
             }
@@ -630,17 +412,9 @@ local statusTemplate = [[
         function toggleMinimap(index) {
             var wavesurfer = window.wavesurfers[index];
             if (wavesurfer && wavesurfer.minimap) {
-                if (wavesurfer.isMinimapVisible) {
-                    wavesurfer.minimap.hide();
-                    wavesurfer.isMinimapVisible = false;
-                    var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .minimap-toggle`);
-                    if (button) button.classList.remove('active');
-                } else {
-                    wavesurfer.minimap.show();
-                    wavesurfer.isMinimapVisible = true;
-                    var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .minimap-toggle`);
-                    if (button) button.classList.add('active');
-                }
+                wavesurfer.isMinimapVisible = !wavesurfer.isMinimapVisible;
+                wavesurfer.isMinimapVisible ? wavesurfer.minimap.show() : wavesurfer.minimap.hide();
+                document.querySelector(`#waveform-${index} ~ .waveform-controls .minimap-toggle`)?.classList.toggle('active', wavesurfer.isMinimapVisible);
             } else {
                 document.getElementById('error-' + index).textContent = 'Minimap unavailable: Minimap plugin not loaded';
             }
@@ -650,17 +424,9 @@ local statusTemplate = [[
         function toggleSpectrogram(index) {
             var wavesurfer = window.wavesurfers[index];
             if (wavesurfer && wavesurfer.spectrogram) {
-                if (wavesurfer.isSpectrogramVisible) {
-                    wavesurfer.spectrogram.hide();
-                    wavesurfer.isSpectrogramVisible = false;
-                    var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .spectrogram-toggle`);
-                    if (button) button.classList.remove('active');
-                } else {
-                    wavesurfer.spectrogram.show();
-                    wavesurfer.isSpectrogramVisible = true;
-                    var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .spectrogram-toggle`);
-                    if (button) button.classList.add('active');
-                }
+                wavesurfer.isSpectrogramVisible = !wavesurfer.isSpectrogramVisible;
+                wavesurfer.isSpectrogramVisible ? wavesurfer.spectrogram.show() : wavesurfer.spectrogram.hide();
+                document.querySelector(`#waveform-${index} ~ .waveform-controls .spectrogram-toggle`)?.classList.toggle('active', wavesurfer.isSpectrogramVisible);
             } else {
                 document.getElementById('error-' + index).textContent = 'Spectrogram unavailable: Spectrogram plugin not loaded';
             }
@@ -670,17 +436,9 @@ local statusTemplate = [[
         function toggleTimeline(index) {
             var wavesurfer = window.wavesurfers[index];
             if (wavesurfer && wavesurfer.timeline) {
-                if (wavesurfer.isTimelineVisible) {
-                    wavesurfer.timeline.hide();
-                    wavesurfer.isTimelineVisible = false;
-                    var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .timeline-toggle`);
-                    if (button) button.classList.remove('active');
-                } else {
-                    wavesurfer.timeline.show();
-                    wavesurfer.isTimelineVisible = true;
-                    var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .timeline-toggle`);
-                    if (button) button.classList.add('active');
-                }
+                wavesurfer.isTimelineVisible = !wavesurfer.isTimelineVisible;
+                wavesurfer.isTimelineVisible ? wavesurfer.timeline.show() : wavesurfer.timeline.hide();
+                document.querySelector(`#waveform-${index} ~ .waveform-controls .timeline-toggle`)?.classList.toggle('active', wavesurfer.isTimelineVisible);
             } else {
                 document.getElementById('error-' + index).textContent = 'Timeline unavailable: Timeline plugin not loaded';
             }
@@ -709,9 +467,7 @@ local statusTemplate = [[
         // Update region count label
         function updateRegionLabel(index, count) {
             var label = document.getElementById(`region-label-${index}`);
-            if (label) {
-                label.textContent = count > 0 ? `${count} silent regions detected` : '';
-            }
+            if (label) label.textContent = count > 0 ? `${count} silent regions detected` : '';
         }
 
         // Render control interface
@@ -722,7 +478,6 @@ local statusTemplate = [[
             controlTable.border = "0";
             var headerRow = controlTable.insertRow(0);
             var headerCell = headerRow.insertCell(0);
-
             var isRecording = jsonObj.app.edit.current_recording && jsonObj.app.edit.current_recording !== "";
             headerCell.innerHTML = `
                 <div class="control-surface">
@@ -735,12 +490,9 @@ local statusTemplate = [[
                     <div class="interface-button empty"><a href="/empty">CLEAR BIN</a></div>
                 </div>`;
             container.appendChild(controlTable);
-
-            setInterval(function() {
+            setInterval(() => {
                 fetch('/status', { cache: 'no-store' }).then(response => {
-                    if (!response.ok) {
-                        throw new Error('Server responded with status ' + response.status);
-                    }
+                    if (!response.ok) throw new Error('Server responded with status ' + response.status);
                     return response.text();
                 }).then(html => {
                     var parser = new DOMParser();
@@ -766,7 +518,6 @@ local statusTemplate = [[
             statusTable.border = "0";
             var headerRow = statusTable.insertRow(0);
             var headerCell = headerRow.insertCell(0);
-
             document.title = 'CREAM::' + jsonObj.hostname;
             headerCell.innerHTML = jsonObj.app.edit.current_recording ?
                 `<h1>BIN:${jsonObj.hostname}</h1> <b>:: CAPTURE:</b><pre>${jsonObj.app.edit.current_recording}</pre>` :
@@ -779,22 +530,10 @@ local statusTemplate = [[
             alert("Opening link: " + fileName);
         }
 
-        // Set background color based on hostname
-        if (jsonObject.hostname === "mix-o") {
-            document.body.style.backgroundColor = "#8B4000";
-        } else if (jsonObject.hostname === "mix-j") {
-            document.body.style.backgroundColor = "#083F71";
-        } else {
-            document.body.style.backgroundColor = "#1b2a3f";
-        }
-
         // Initialize UI
-        document.addEventListener('DOMContentLoaded', function() {
-            var collapsible = document.querySelector('.collapsible');
-            if (collapsible) {
-                collapsible.addEventListener('click', toggleContent);
-            }
-            waitForPlugins(function() {
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelector('.collapsible')?.addEventListener('click', toggleContent);
+            waitForPlugins(() => {
                 renderStatus(jsonObject, "current-status");
                 renderControlInterface(jsonObject, "control-interface");
                 prettifyAndRenderJSON(jsonObject, "json-container");
@@ -805,234 +544,20 @@ local statusTemplate = [[
     <div id="current-status"></div>
     <div id="control-interface"></div>
     <div id="wav-tracks"></div>
-    <div class="collapsible">::debug::
-        <div id="json-container"></div>
-    </div>
+    <div class="collapsible">::debug::<div id="json-container"></div></div>
 </body>
 </html>
 ]]
 
-
-
-local statusTemplate = [[
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CREAM::{{hostname}}</title>
-    <script src="/js/wavesurfer.min.js"></script>
-    <script>
-        console.log('WaveSurfer core load attempt at ' + new Date().toISOString());
-        try {
-            console.log('WaveSurfer before envelope:', typeof WaveSurfer, Object.keys(WaveSurfer || {}));
-            if (typeof WaveSurfer !== 'undefined') {
-                console.log('WaveSurfer core loaded at ' + new Date().toISOString());
-            }
-        } catch (e) {
-            console.error('WaveSurfer core error:', e);
-        }
-    </script>
-    <script src="/js/envelope.min.js"></script>
-    <script>
-        console.log('Envelope plugin load attempt at ' + new Date().toISOString());
-        try {
-            fetch('/js/envelope.min.js').then(res => res.text()).then(text => {
-                console.log('Envelope.js content length: ' + text.length + ' chars');
-            });
-            console.log('WaveSurfer after envelope:', typeof WaveSurfer, Object.keys(WaveSurfer || {}));
-            if (typeof WaveSurfer !== 'undefined' && WaveSurfer.envelope) {
-                console.log('Envelope plugin loaded at ' + new Date().toISOString());
-            } else {
-                console.log('Envelope plugin not loaded at ' + new Date().toISOString());
-            }
-        } catch (e) {
-            console.error('Envelope plugin error:', e);
-        }
-    </script>
-    <style>
-        body { font-family: 'Courier New', monospace; background-color: #1b2a3f; color: white; }
-        h1 { color: #999999; }
-        .waveform-container { height: 100px; margin: 10px 0; background-color: #222; border: 1px solid #444; }
-        .waveform-controls { display: flex; gap: 5px; flex-wrap: wrap; }
-        .waveform-button { padding: 5px 10px; background-color: #555; color: white; border: none; border-radius: 3px; cursor: pointer; }
-        .waveform-button:hover { background-color: #777; }
-        .waveform-button.active { background-color: #4CAF50; }
-        .error-message { color: red; font-size: 12px; }
-    </style>
-</head>
-<body>
-    <script>
-        // Wait for plugins
-        function waitForPlugins(callback) {
-            const plugins = ['envelope'];
-            let attempts = 0;
-            function checkPlugin() {
-                if (typeof WaveSurfer !== 'undefined' && plugins.every(p => WaveSurfer[p])) {
-                    console.log('All plugins loaded at ' + new Date().toISOString() + ':', Object.keys(WaveSurfer));
-                    callback();
-                } else {
-                    attempts++;
-                    if (attempts < 50) {
-                        setTimeout(checkPlugin, 100);
-                    } else {
-                        console.error('Plugin loading timeout at ' + new Date().toISOString() + ':', {
-                            envelope: !!WaveSurfer.envelope
-                        });
-                        callback();
-                    }
-                }
-            }
-            console.log('Starting plugin check at ' + new Date().toISOString());
-            checkPlugin();
-        }
-
-        // Render tracks
-        function renderWAVTracks(jsonObj, containerId) {
-            console.log('Rendering tracks at ' + new Date().toISOString());
-            var container = document.getElementById(containerId);
-            container.innerHTML = '';
-            var tracks = (jsonObj.app.edit.Tracks || []).sort();
-            var wavTable = document.createElement('table');
-            wavTable.border = '0';
-            var waveformData = [];
-
-            tracks.forEach(function(track, i) {
-                var row = wavTable.insertRow(0);
-                var cell = row.insertCell(0);
-                var waveformId = 'waveform-' + i;
-                cell.innerHTML = `
-                    <div>
-                        <a href="/play/${track}">${track}</a>
-                        <div id="${waveformId}" class="waveform-container"></div>
-                        <div class="waveform-controls">
-                            <button class="waveform-button" onclick="wavesurfers[${i}]?.playPause()">Play/Pause</button>
-                            <button class="waveform-button envelope-toggle" onclick="toggleEnvelope(${i})">Toggle Envelope</button>
-                            <span class="error-message" id="error-${i}"></span>
-                        </div>
-                    </div>`;
-                waveformData.push({ index: i, waveformId: waveformId, track: track });
-            });
-
-            container.appendChild(wavTable);
-
-            window.wavesurfers = window.wavesurfers || [];
-            waveformData.forEach(function(data) {
-                try {
-                    if (typeof WaveSurfer === 'undefined') {
-                        throw new Error('WaveSurfer.js not loaded');
-                    }
-                    var wavesurfer = WaveSurfer.create({
-                        container: '#' + data.waveformId,
-                        waveColor: 'violet',
-                        progressColor: 'purple',
-                        height: 100,
-                        responsive: true,
-                        plugins: [
-                            WaveSurfer.envelope ? WaveSurfer.envelope.create({ volume: 1.0 }) : null
-                        ].filter(p => p)
-                    });
-                    wavesurfer.load('/static/' + data.track);
-                    wavesurfer.on('ready', function() {
-                        console.log('Waveform ' + data.index + ' ready at ' + new Date().toISOString());
-                        window.wavesurfers[data.index] = wavesurfer;
-                        wavesurfer.isEnvelopeApplied = false;
-                    });
-                    wavesurfer.on('error', function(e) {
-                        document.getElementById('error-' + data.index).textContent = 'Error: ' + e.message;
-                    });
-                    window.wavesurfers[data.index] = wavesurfer;
-                } catch (e) {
-                    console.error('WaveSurfer init error for ' + data.track + ':', e);
-                    document.getElementById('error-' + data.index).textContent = 'Failed to load waveform: ' + e.message;
-                }
-            });
-        }
-
-        // Toggle envelope
-        function toggleEnvelope(index) {
-            console.log('Toggling envelope for index ' + index + ' at ' + new Date().toISOString());
-            var wavesurfer = window.wavesurfers[index];
-            if (wavesurfer && wavesurfer.envelope) {
-                wavesurfer.isEnvelopeApplied = !wavesurfer.isEnvelopeApplied;
-                wavesurfer.envelope.setFade(wavesurfer.isEnvelopeApplied ? 2 : 0, 0, wavesurfer.isEnvelopeApplied ? 2 : 0, 0);
-                var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .envelope-toggle`);
-                if (button) button.classList.toggle('active', wavesurfer.isEnvelopeApplied);
-            } else {
-                document.getElementById('error-' + index).textContent = 'Envelope unavailable: Plugin not loaded';
-            }
-        }
-
-        // Render control interface
-        function renderControlInterface(jsonObj, containerId) {
-            console.log('Rendering control interface at ' + new Date().toISOString());
-            var container = document.getElementById(containerId);
-            container.innerHTML = '';
-            var isRecording = jsonObj.app.edit.current_recording && jsonObj.app.edit.current_recording !== '';
-            container.innerHTML = `
-                <div>
-                    <button class="interface-button ${isRecording ? 'stop' : 'start'}">
-                        <a href="${isRecording ? '/stop' : '/start'}">${isRecording ? 'STOP CAPTURE' : 'CAPTURE'}</a>
-                    </button>
-                </div>`;
-        }
-
-        // Start status polling
-        function startStatusPolling() {
-            console.log('Starting status polling at ' + new Date().toISOString());
-            setInterval(function() {
-                console.log('Status poll at ' + new Date().toISOString());
-                fetch('/status', { cache: 'no-store' }).then(response => {
-                    if (!response.ok) {
-                        throw new Error('Status fetch failed: ' + response.status);
-                    }
-                    return response.text();
-                }).then(html => {
-                    var parser = new DOMParser();
-                    var doc = parser.parseFromString(html, 'text/html');
-                    var newJsonScript = doc.querySelector('script').textContent.match(/var jsonObject = ({.*});/);
-                    if (newJsonScript) {
-                        var newJson = JSON.parse(newJsonScript[1]);
-                        renderControlInterface(newJson, 'control-interface');
-                    }
-                }).catch(err => {
-                    console.error('Status poll error:', err);
-                    document.getElementById('current-status').innerHTML += '<p class="error-message">Status update failed: ' + err.message + '</p>';
-                });
-            }, 2000);
-        }
-
-        // Initialize UI
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('DOM content loaded at ' + new Date().toISOString());
-            waitForPlugins(function() {
-                console.log('Plugins check complete at ' + new Date().toISOString());
-                var jsonObject = {{{jsonData}}};
-                renderControlInterface(jsonObject, 'control-interface');
-                renderWAVTracks(jsonObject, 'wav-tracks');
-                startStatusPolling();
-            });
-        });
-    </script>
-    <div id="current-status"></div>
-    <div id="control-interface"></div>
-    <div id="wav-tracks"></div>
-</body>
-</html>
-]]
-
-
--- Utility function to execute shell commands
+-- Execute shell commands asynchronously
 local function executeCommand(command, callback, flag, resetFlag)
     turbo.ioloop.instance():add_callback(function()
-        local thread = turbo.thread.Thread(function(th)
+        local thread = turbo_thread.Thread(function(th)
             cLOG(syslog.LOG_INFO, "Executing command: " .. command)
             local process = io.popen(command .. " ; echo $?")
             local output = ""
             local exitCode
-            while true do
-                local chunk = process:read("*l")
-                if not chunk then break end
+            for chunk in process:lines() do
                 if chunk:match("^%d+$") then
                     exitCode = tonumber(chunk)
                 else
@@ -1045,170 +570,166 @@ local function executeCommand(command, callback, flag, resetFlag)
             if exitCode and exitCode ~= 0 then
                 cLOG(syslog.LOG_ERR, "Command failed with exit code " .. exitCode .. ": " .. command .. "\nOutput: " .. output)
             else
-                cLOG(syslog.LOG_INFO, "Command execution stopped: " .. command .. "\nOutput: " .. output)
+                cLOG(syslog.LOG_INFO, "Command completed: " .. command .. "\nOutput: " .. output)
             end
-            if resetFlag then
-                resetFlag(false)
-            end
+            if resetFlag then resetFlag(false) end
+            if callback then callback(output) end
             th:stop()
         end)
         thread:wait_for_finish()
-        if callback then
-            callback(output)
-        end
     end)
 end
 
--- JavaScript Handler
+-- JavaScript file handler
 local creamJsHandler = class("creamJsHandler", turbo.web.RequestHandler)
 function creamJsHandler:get(jsFile)
-    local status, result = pcall(function()
-        local jsFilePath = config.CREAM_STATIC_DIRECTORY .. jsFile
+    pcall(function()
+        local jsFilePath = config.CREAM_STATIC_DIRECTORY .. jsFile .. ".js"
         cLOG(syslog.LOG_INFO, "Serving JS file: " .. jsFilePath)
         local file = io.open(jsFilePath, "rb")
-        if file then
-            local content = file:read("*a")
-            file:close()
-            self:set_header("Content-Type", "text/javascript") -- Ensure correct MIME type
-            self:write(content)
-        else
-            self:set_status(404)
-            self:write("File not found: " .. jsFilePath)
+        if not file then
             cLOG(syslog.LOG_ERR, "JS file not found: " .. jsFilePath)
+            self:set_status(404)
+            return self:write("File not found: " .. jsFilePath)
         end
-    end)
-    if not status then
-        cLOG(syslog.LOG_ERR, "JS handler error: " .. tostring(result) .. "\nStack: " .. debug.traceback())
+        local content = file:read("*a")
+        file:close()
+        self:set_header("Content-Type", "application/javascript") -- Use standard MIME type
+        self:set_header("Cache-Control", "public, max-age=3600") -- Cache for 1 hour
+        self:write(content)
+    end, function(err)
+        cLOG(syslog.LOG_ERR, "JS handler error: " .. tostring(err) .. "\nStack: " .. debug.traceback())
         self:set_status(500)
         self:write("Internal server error")
-    end
+    end)
     self:finish()
 end
 
--- Web Handlers
+-- Status page handler
 local creamWebStatusHandler = class("creamWebStatusHandler", turbo.web.RequestHandler)
 function creamWebStatusHandler:get()
-    local status, result = pcall(function()
+    pcall(function()
         local hostname = syscall.gethostname()
         local userData = {
             hostname = hostname,
             partner = config.CREAM_SYNC_PARTNER or "none",
             backgroundColor = hostname == "mix-o" and "#8B4000" or hostname == "mix-j" and "#083F71" or "#1b2a3f",
             app = {
-                recording = creamIsExecuting,
-                synchronizing = creamIsSynchronizing,
+                recording = state.isExecuting,
+                synchronizing = state.isSynchronizing,
                 name = config.APP_NAME,
                 version = config.CREAM_APP_VERSION,
                 edit = CREAM.edit or { current_recording = "", Tracks = {} },
                 io = CREAM.devices and CREAM.devices.online or {}
             }
         }
-        local updateStatus, updateErr = pcall(CREAM.update, CREAM)
-        if not updateStatus then
-            cLOG(syslog.LOG_ERR, "CREAM update failed: " .. tostring(updateErr) .. "\nStack: " .. debug.traceback())
-        end
-        cLOG(syslog.LOG_DEBUG, "Rendering /status with current_recording: " .. tostring(userData.app.edit.current_recording) .. ", creamIsExecuting: " .. tostring(creamIsExecuting))
+        pcall(CREAM.update, CREAM, function(err)
+            cLOG(syslog.LOG_ERR, "CREAM update failed: " .. tostring(err) .. "\nStack: " .. debug.traceback())
+        end)
+        cLOG(syslog.LOG_DEBUG, "Rendering /status with current_recording: " .. tostring(userData.app.edit.current_recording))
         local jsonData = cjson.encode(userData)
-        local rendered = turbo.web.Mustache.render(statusTemplate, {
+        self:write(turbo.web.Mustache.render(statusTemplate, {
             hostname = userData.hostname,
             backgroundColor = userData.backgroundColor,
             jsonData = jsonData,
             app = userData.app,
             partner = userData.partner
-        })
-        return rendered
-    end)
-    if not status then
-        cLOG(syslog.LOG_ERR, "Status handler error: " .. tostring(result) .. "\nStack: " .. debug.traceback())
+        }))
+    end, function(err)
+        cLOG(syslog.LOG_ERR, "Status handler error: " .. tostring(err) .. "\nStack: " .. debug.traceback())
         self:set_status(500)
-        return self:write("Internal server error")
-    end
-    self:write(result)
+        self:write("Internal server error")
+    end)
     self:finish()
 end
 function creamWebStatusHandler:on_finish()
     collectgarbage("collect") -- Clean up memory
 end
 
+-- Start recording handler
 local creamWebStartHandler = class("creamWebStartHandler", turbo.web.RequestHandler)
 function creamWebStartHandler:get()
-    local status, result = pcall(function()
-        if creamIsExecuting then
-            cLOG(syslog.LOG_WARNING, "Recording already in progress: " .. tostring(CREAM.edit.current_recording))
-            self:write("Recording already in progress: " .. tostring(CREAM.edit.current_recording))
+    pcall(function()
+        if state.isExecuting then
+            cLOG(syslog.LOG_WARNING, "Recording already in progress: " .. tostring(CREAM.edit and CREAM.edit.current_recording or "none"))
+            self:write("Recording already in progress")
             return
         end
-        -- Ensure CREAM.edit is initialized
         CREAM.edit = CREAM.edit or { current_recording = "", Tracks = {} }
         CREAM.edit.current_recording = string.format("%s::%s.wav",
             syscall.gethostname(),
             os.date('%Y-%m-%d@%H:%M:%S.') .. string.match(tostring(os.clock()), "%d%.(%d+)"))
         local command = string.format(
-            "/usr/bin/arecord -vvv -f cd -t wav %s%s -D plughw:CARD=MiCreator,DEV=0 2>&1 > %sarecord.log",
+            "%s -vvv -f cd -t wav %s%s -D plughw:CARD=MiCreator,DEV=0 2>&1 > %sarecord.log",
+            config.ARECORD_PATH or "/usr/bin/arecord",
             config.CREAM_ARCHIVE_DIRECTORY, CREAM.edit.current_recording, config.CREAM_ARCHIVE_DIRECTORY)
-        creamIsExecuting = true
-        cLOG(syslog.LOG_INFO, "Starting recording: " .. CREAM.edit.current_recording .. ", creamIsExecuting: " .. tostring(creamIsExecuting))
-        executeCommand(command, nil, function() return creamIsExecuting end, function(val) creamIsExecuting = val end)
+        executeCommand(command, function(output)
+            if output:match("error") then
+                state.isExecuting = false
+                cLOG(syslog.LOG_ERR, "Recording failed: " .. output)
+            else
+                state.isExecuting = true
+                cLOG(syslog.LOG_INFO, "Started recording: " .. CREAM.edit.current_recording)
+            end
+        end, function() return state.isExecuting end, function(val) state.isExecuting = val end)
         self:set_status(303)
         self:set_header("Location", "/status")
-        self:finish()
-    end)
-    if not status then
-        cLOG(syslog.LOG_ERR, "Start handler error: " .. tostring(result) .. "\nStack: " .. debug.traceback())
+    end, function(err)
+        cLOG(syslog.LOG_ERR, "Start handler error: " .. tostring(err) .. "\nStack: " .. debug.traceback())
         self:set_status(500)
         self:write("Internal server error")
-    end
+    end)
+    self:finish()
 end
 
+-- Stop recording handler
 local creamWebStopHandler = class("creamWebStopHandler", turbo.web.RequestHandler)
 function creamWebStopHandler:get()
-    local status, result = pcall(function()
+    pcall(function()
         local command = "killall arecord"
-        creamIsExecuting = false
-        cLOG(syslog.LOG_INFO, "Stopping recording: " .. tostring(CREAM.edit and CREAM.edit.current_recording or "none"))
-        if CREAM.edit then
-            CREAM.edit.current_recording = ""
-        end
+        CREAM.edit = CREAM.edit or { current_recording = "", Tracks = {} }
+        cLOG(syslog.LOG_INFO, "Stopping recording: " .. tostring(CREAM.edit.current_recording or "none"))
+        CREAM.edit.current_recording = ""
         executeCommand(command, function(result)
-            cLOG(syslog.LOG_DEBUG, "Stop command result: ", result)
+            cLOG(syslog.LOG_DEBUG, "Stop command result: " .. result)
+            state.isExecuting = false
         end, function() return false end)
         self:set_status(303)
         self:set_header("Location", "/status")
-        self:finish()
-    end)
-    if not status then
-        cLOG(syslog.LOG_ERR, "Stop handler error: " .. tostring(result) .. "\nStack: " .. debug.traceback())
+    end, function(err)
+        cLOG(syslog.LOG_ERR, "Stop handler error: " .. tostring(err) .. "\nStack: " .. debug.traceback())
         self:set_status(500)
         self:write("Internal server error")
-    end
+    end)
+    self:finish()
 end
 
+-- Clear recordings handler
 local creamWebEmptyHandler = class("creamWebEmptyHandler", turbo.web.RequestHandler)
 function creamWebEmptyHandler:get()
-    local status, result = pcall(function()
-        local command = string.format("find %s -name '*.wav' -exec rm -rf {} \\;", config.CREAM_ARCHIVE_DIRECTORY)
-        creamIsExecuting = false
-        cLOG(syslog.LOG_INFO, "Emptying recordings")
-        if CREAM.edit then
-            CREAM.edit.current_recording = ""
-        end
+    pcall(function()
+        local command = string.format("find %s -name '*.wav' -delete", config.CREAM_ARCHIVE_DIRECTORY)
+        CREAM.edit = CREAM.edit or { current_recording = "", Tracks = {} }
+        cLOG(syslog.LOG_INFO, "Clearing recordings")
+        CREAM.edit.current_recording = ""
+        state.isExecuting = false
         executeCommand(command, function(result)
-            cLOG(syslog.LOG_DEBUG, "Empty command result: ", result)
+            cLOG(syslog.LOG_DEBUG, "Clear command result: " .. result)
         end, function() return false end)
         self:set_status(303)
         self:set_header("Location", "/status")
-        self:finish()
-    end)
-    if not status then
-        cLOG(syslog.LOG_ERR, "Empty handler error: " .. tostring(result) .. "\nStack: " .. debug.traceback())
+    end, function(err)
+        cLOG(syslog.LOG_ERR, "Empty handler error: " .. tostring(err) .. "\nStack: " .. debug.traceback())
         self:set_status(500)
         self:write("Internal server error")
-    end
+    end)
+    self:finish()
 end
 
+-- Synchronize recordings handler
 local creamWebSynchronizeHandler = class("creamWebSynchronizeHandler", turbo.web.RequestHandler)
 function creamWebSynchronizeHandler:get()
-    local status, result = pcall(function()
+    pcall(function()
         if not config.CREAM_SYNC_PARTNER then
             cLOG(syslog.LOG_WARNING, "Synchronization not supported on this host")
             self:write("Synchronization not supported")
@@ -1216,94 +737,99 @@ function creamWebSynchronizeHandler:get()
             self:set_header("Location", "/status")
             return
         end
-        local command = creamIsSynchronizing and "killall rsync" or string.format(
-            "rsync -avz --include='%s' ibi@%s.local:%s %s 2>&1 > %srsync.log",
-            config.CREAM_SYNC_PARTNER, config.CREAM_SYNC_PARTNER, config.CREAM_ARCHIVE_DIRECTORY,
+        local command = state.isSynchronizing and "killall rsync" or string.format(
+            "rsync -avz --include='*.wav' ibi@%s.local:%s %s 2>&1 > %srsync.log",
+            config.CREAM_SYNC_PARTNER, config.CREAM_ARCHIVE_DIRECTORY,
             config.CREAM_ARCHIVE_DIRECTORY, config.CREAM_ARCHIVE_DIRECTORY)
-        creamIsSynchronizing = not creamIsSynchronizing
-        cLOG(syslog.LOG_INFO, creamIsSynchronizing and "Starting synchronization" or "Stopping synchronization")
-        executeCommand(command, nil, function() return creamIsSynchronizing end, function(val) creamIsSynchronizing = val end)
+        state.isSynchronizing = not state.isSynchronizing
+        cLOG(syslog.LOG_INFO, state.isSynchronizing and "Starting synchronization" or "Stopping synchronization")
+        executeCommand(command, nil, function() return state.isSynchronizing end, function(val) state.isSynchronizing = val end)
         self:set_status(303)
         self:set_header("Location", "/status")
-        self:finish()
-    end)
-    if not status then
-        cLOG(syslog.LOG_ERR, "Synchronize handler error: " .. tostring(result) .. "\nStack: " .. debug.traceback())
+    end, function(err)
+        cLOG(syslog.LOG_ERR, "Synchronize handler error: " .. tostring(err) .. "\nStack: " .. debug.traceback())
         self:set_status(500)
         self:write("Internal server error")
-    end
+    end)
+    self:finish()
 end
 
+-- Play audio handler
 local creamWebPlayHandler = class("creamWebPlayHandler", turbo.web.RequestHandler)
 function creamWebPlayHandler:get(fileToPlay)
-    local status, result = pcall(function()
-        -- Strict file name validation
+    pcall(function()
         if not fileToPlay:match("^[a-zA-Z0-9%-:_.]+%.wav$") then
             cLOG(syslog.LOG_ERR, "Invalid file name: " .. fileToPlay)
             self:set_status(400)
-            self:write("Invalid file name")
-            return
+            return self:write("Invalid file name")
         end
-        local command = string.format("/usr/bin/aplay %s%s -d 0 2>&1",
+        local command = string.format("%s %s%s -d 0 2>&1",
+            config.APLAY_PATH or "/usr/bin/aplay",
             config.CREAM_ARCHIVE_DIRECTORY, fileToPlay)
-        creamIsPlaying = true
+        state.isPlaying = true
         cLOG(syslog.LOG_INFO, "Playing: " .. fileToPlay)
-        executeCommand(command, nil, function() return creamIsPlaying end, function(val) creamIsPlaying = val end)
+        executeCommand(command, nil, function() return state.isPlaying end, function(val) state.isPlaying = val end)
         self:set_status(303)
         self:set_header("Location", "/status")
-        self:finish()
-    end)
-    if not status then
-        cLOG(syslog.LOG_ERR, "Play handler error: " .. tostring(result) .. "\nStack: " .. debug.traceback())
+    end, function(err)
+        cLOG(syslog.LOG_ERR, "Play handler error: " .. tostring(err) .. "\nStack: " .. debug.traceback())
         self:set_status(500)
         self:write("Internal server error")
-    end
-end
-
-local creamWebRecordStartHandler = class("creamWebRecordStartHandler", turbo.web.RequestHandler)
-function creamWebRecordStartHandler:get()
-    self:set_status(200)
+    end)
     self:finish()
 end
 
-local creamWebRecordStopHandler = class("creamWebRecordStopHandler", turbo.web.RequestHandler)
-function creamWebRecordStopHandler:get()
-    self:set_status(200)
-    self:finish()
-end
-
+-- WAV file handler
 local creamWavHandler = class("creamWavHandler", turbo.web.RequestHandler)
 function creamWavHandler:get(wavFile)
-    local status, result = pcall(function()
+    pcall(function()
         local wavFilePath = config.CREAM_ARCHIVE_DIRECTORY .. wavFile
         cLOG(syslog.LOG_INFO, "Serving WAV file: " .. wavFilePath)
         local file = io.open(wavFilePath, "rb")
-        if file then
-            local content = file:read("*a")
-            file:close()
-            self:set_header("Content-Type", "audio/wav")
-            self:write(content)
-        else
+        if not file then
+            cLOG(syslog.LOG_ERR, "WAV file not found: " .. wavFilePath)
             self:set_status(404)
-            self:write("File not found")
+            return self:write("File not found")
         end
-    end)
-    if not status then
-        cLOG(syslog.LOG_ERR, "WAV handler error: " .. tostring(result) .. "\nStack: " .. debug.traceback())
+        local content = file:read("*a")
+        file:close()
+        self:set_header("Content-Type", "audio/wav")
+        self:write(content)
+    end, function(err)
+        cLOG(syslog.LOG_ERR, "WAV handler error: " .. tostring(err) .. "\nStack: " .. debug.traceback())
         self:set_status(500)
         self:write("Internal server error")
-    end
+    end)
     self:finish()
 end
 
--- Define web application routes
+-- Favicon handler
 local creamFaviconHandler = class("creamFaviconHandler", turbo.web.RequestHandler)
 function creamFaviconHandler:get()
-    self:set_status(204) -- No Content
+    self:set_status(204)
     self:finish()
 end
 
--- Update routes
+-- Initialize application
+cSTACK:append(function()
+    local hostname = syscall.gethostname()
+    config.dump()
+    syslog.setlogmask(syslog.LOG_DEBUG)
+    syslog.openlog(config.APP_NAME, syslog.LOG_SYSLOG)
+    cLOG(syslog.LOG_INFO, string.format("%s running on host: %s protocol version %s on %s:%d",
+        config.APP_NAME, hostname, config.CREAM_PROTOCOL_VERSION,
+        config.CREAM_APP_SERVER_HOST, config.CREAM_APP_SERVER_PORT))
+    cLOG(syslog.LOG_INFO, config.CREAM_APP_VERSION)
+    pcall(function()
+        CREAM.devices = CREAM.devices or { online = {}, init = function() end, dump = function() end }
+        CREAM.devices:init()
+        CREAM.devices:dump()
+    end, function(err)
+        cLOG(syslog.LOG_ERR, "Failed to initialize CREAM devices: " .. tostring(err) .. "\nStack: " .. debug.traceback())
+    end)
+end)
+
+-- Define web application routes
 local creamWebApp = turbo.web.Application:new({
     {"/status", creamWebStatusHandler},
     {"/start", creamWebStartHandler},
@@ -1311,29 +837,27 @@ local creamWebApp = turbo.web.Application:new({
     {"/empty", creamWebEmptyHandler},
     {"/synchronize", creamWebSynchronizeHandler},
     {"/play/(.*)$", creamWebPlayHandler},
-    {"/recordStart", creamWebRecordStartHandler},
-    {"/recordStop", creamWebRecordStopHandler},
-    {"/favicon.ico", creamFaviconHandler}, -- Add this line
+    {"/favicon.ico", creamFaviconHandler},
+    {"^/.*\\.js(\\?.*)?/?$", creamJsHandler},
+    {"^/static/.*\\.wav$", creamWavHandler},
     {"^/$", turbo.web.StaticFileHandler, "./html/index.html"},
-    {"^/static/(.*)$", creamWavHandler},
-    {"^/js/(.*)$", creamJsHandler}
 })
 
--- Initialize CREAM and start server
-local status, err = pcall(function()
+-- Initialize CREAM
+pcall(function()
     CREAM.edit = CREAM.edit or { current_recording = "", Tracks = {} }
     CREAM:init()
-end)
-if not status then
+end, function(err)
     cLOG(syslog.LOG_ERR, "CREAM initialization failed: " .. tostring(err) .. "\nStack: " .. debug.traceback())
-end
+end)
 
--- Check port availability before binding
+-- Check port availability
 if isPortInUse(config.CREAM_APP_SERVER_PORT) then
-    cLOG(syslog.LOG_ERR, string.format("Port %d is already in use. Please stop other processes or change CREAM_APP_SERVER_PORT.", config.CREAM_APP_SERVER_PORT))
+    cLOG(syslog.LOG_ERR, string.format("Port %d is already in use.", config.CREAM_APP_SERVER_PORT))
     os.exit(1)
 end
 
+-- Start server
 creamWebApp:listen(config.CREAM_APP_SERVER_PORT)
 
 -- Main loop for processing command stack
@@ -1341,22 +865,19 @@ local function creamMain()
     while cSTACK:size() > 0 do
         local command = cSTACK:pop()
         if command then
-            local status, err = pcall(command)
-            if not status then
+            pcall(command, function(err)
                 cLOG(syslog.LOG_ERR, "Command execution failed: " .. tostring(err) .. "\nStack: " .. debug.traceback())
-            end
+            end)
         end
-        if creamIsExecuting then
-            local status, err = pcall(CREAM.update, CREAM)
-            if not status then
+        if state.isExecuting then
+            pcall(CREAM.update, CREAM, function(err)
                 cLOG(syslog.LOG_ERR, "CREAM update failed: " .. tostring(err) .. "\nStack: " .. debug.traceback())
-            end
+            end)
         end
     end
-    --turbo.ioloop.instance():add_timeout(turbo.util.gettimemonotonic() + config.CREAM_COMMAND_INTERVAL, creamMain)
+    turbo.ioloop.instance():add_timeout(turbo.util.gettimemonotonic() + config.CREAM_COMMAND_INTERVAL, creamMain)
 end
 
 -- Start the main loop and server
 turbo.ioloop.instance():add_timeout(turbo.util.gettimemonotonic() + config.CREAM_COMMAND_INTERVAL, creamMain)
 turbo.ioloop.instance():start()
-
