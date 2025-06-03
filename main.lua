@@ -323,7 +323,7 @@ local statusTemplate = [[
                     timelineDiv.id = data.waveformId + '-timeline';
                     timelineDiv.className = 'ws-timeline';
                     waveformContainer.parentNode.insertBefore(timelineDiv, spectrogramDiv.nextSibling);
-                    wavesurfer.load('/static/' + data.track);
+                    wavesurfer.load('/' + data.track);
                     wavesurfer.on('ready', () => {
                         window.wavesurfers[data.index] = wavesurfer;
                         wavesurfer.isSilenceDetected = false;
@@ -550,9 +550,7 @@ local statusTemplate = [[
 ]]
 
 -- Execute shell commands asynchronously
-
-
-local statusTemplate = [[
+local statusTemplate2 = [[
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -670,7 +668,7 @@ local statusTemplate = [[
                             WaveSurfer.envelope ? WaveSurfer.envelope.create({ volume: 1.0 }) : null
                         ].filter(p => p)
                     });
-                    wavesurfer.load('/static/' + data.track);
+                    wavesurfer.load('/' + data.track);
                     wavesurfer.on('ready', function() {
                         console.log('Waveform ' + data.index + ' ready at ' + new Date().toISOString());
                         window.wavesurfers[data.index] = wavesurfer;
@@ -831,7 +829,7 @@ end
 local creamJsHandler = class("creamJsHandler", turbo.web.RequestHandler)
 function creamJsHandler:get(jsFile)
     pcall(function()
-        local jsFilePath = config.CREAM_STATIC_DIRECTORY .. jsFile .. ".js"
+        local jsFilePath = config.CREAM_STATIC_DIRECTORY .. jsFile
         cLOG(syslog.LOG_INFO, "Serving JS file: " .. jsFilePath)
         local file = io.open(jsFilePath, "rb")
         if not file then
@@ -903,7 +901,7 @@ function creamWebStartHandler:get()
             return
         end
         CREAM.edit = CREAM.edit or { current_recording = "", Tracks = {} }
-        CREAM.edit.current_recording = string.format("%s::%s.wav",
+        CREAM.edit.current_recording = string.format("%s_%s.wav",
             syscall.gethostname(),
             os.date('%Y-%m-%d@%H:%M:%S.') .. string.match(tostring(os.clock()), "%d%.(%d+)"))
         local command = string.format(
@@ -1005,14 +1003,11 @@ end
 local creamWebPlayHandler = class("creamWebPlayHandler", turbo.web.RequestHandler)
 function creamWebPlayHandler:get(fileToPlay)
     pcall(function()
-        if not fileToPlay:match("^[a-zA-Z0-9%-:_.]+%.wav$") then
-            cLOG(syslog.LOG_ERR, "Invalid file name: " .. fileToPlay)
-            self:set_status(400)
-            return self:write("Invalid file name")
-        end
         local command = string.format("%s %s%s -d 0 2>&1",
             config.APLAY_PATH or "/usr/bin/aplay",
             config.CREAM_ARCHIVE_DIRECTORY, fileToPlay)
+        cLOG(syslog.LOG_INFO, "Play filename: " .. fileToPlay)
+        cLOG(syslog.LOG_INFO, "      Command: " .. command)
         state.isPlaying = true
         cLOG(syslog.LOG_INFO, "Playing: " .. fileToPlay)
         executeCommand(command, nil, function() return state.isPlaying end, function(val) state.isPlaying = val end)
@@ -1078,16 +1073,16 @@ end)
 
 -- Define web application routes
 local creamWebApp = turbo.web.Application:new({
-    {"/status", creamWebStatusHandler},
-    {"/start", creamWebStartHandler},
-    {"/stop", creamWebStopHandler},
-    {"/empty", creamWebEmptyHandler},
-    {"/synchronize", creamWebSynchronizeHandler},
-    {"/play/(.*)$", creamWebPlayHandler},
-    {"/favicon.ico", creamFaviconHandler},
-    {"^/(.*%.js)$", turbo.web.StaticFileHandler, "./static/"},
-    {"^/static/.*\\.wav$", creamWavHandler},
-    {"^/$", turbo.web.StaticFileHandler, "./html/index.html"},
+  {"/status", creamWebStatusHandler},
+  {"/start", creamWebStartHandler},
+  {"/stop", creamWebStopHandler},
+  {"/empty", creamWebEmptyHandler},
+  {"/synchronize", creamWebSynchronizeHandler},
+  {"^/(.*%.js)$", creamJsHandler},
+  {"/play/(.*)$", creamWebPlayHandler},
+  {"/favicon.ico", creamFaviconHandler},
+  {"^/.*%.wav$", creamWavHandler},
+  {"^/$", turbo.web.StaticFileHandler, "./html/index.html"},
 })
 
 -- Initialize CREAM
