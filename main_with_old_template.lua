@@ -121,9 +121,9 @@ local statusTemplate = [[
                 if (typeof WaveSurfer !== 'undefined' && plugins.every(p => WaveSurfer[p])) {
                     console.log('All plugins loaded:', Object.keys(WaveSurfer));
                     callback();
-                } else if (attempts < 3) {
+                } else if (attempts < 100) {
                     attempts++;
-                    setTimeout(checkPlugin, 3);
+                    setTimeout(checkPlugin, 100);
                 } else {
                     console.error('Plugin loading timeout:', {
                         regions: !!WaveSurfer.regions, envelope: !!WaveSurfer.envelope, hover: !!WaveSurfer.hover,
@@ -273,13 +273,13 @@ local statusTemplate = [[
                     wavesurfer.load('/' + data.track);
                     wavesurfer.on('ready', () => {
                         window.wavesurfers[data.index] = wavesurfer;
-                        wavesurfer.isSilenceDetected = true;
+                        wavesurfer.isSilenceDetected = false;
                         wavesurfer.isMinimapVisible = true;
-                        wavesurfer.isSpectrogramVisible = true;
-                        wavesurfer.isTimelineVisible = true;
-                        wavesurfer.isEnvelopeApplied = true;
-                        //if (wavesurfer.spectrogram) wavesurfer.spectrogram.hide();
-                        //if (wavesurfer.timeline) wavesurfer.timeline.hide();
+                        wavesurfer.isSpectrogramVisible = false;
+                        wavesurfer.isTimelineVisible = false;
+                        wavesurfer.isEnvelopeApplied = false;
+                        if (wavesurfer.spectrogram) wavesurfer.spectrogram.hide();
+                        if (wavesurfer.timeline) wavesurfer.timeline.hide();
                     });
                     if (wavesurfer.regions) {
                         wavesurfer.on('region-click', region => wavesurfer.play(region.start, region.end));
@@ -492,6 +492,214 @@ local statusTemplate = [[
     <div id="control-interface"></div>
     <div id="wav-tracks"></div>
     <div class="collapsible">::debug::<div id="json-container"></div></div>
+</body>
+</html>
+]]
+
+-- Execute shell commands asynchronously
+local statusTemplateSimpleDebug = [[
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CREAM::{{hostname}}</title>
+    <script src="wavesurfer.min.js"></script>
+    <script>
+        console.log('WaveSurfer core load attempt at ' + new Date().toISOString());
+        try {
+            console.log('WaveSurfer before envelope:', typeof WaveSurfer, Object.keys(WaveSurfer || {}));
+            if (typeof WaveSurfer !== 'undefined') {
+                console.log('WaveSurfer core loaded at ' + new Date().toISOString());
+            }
+        } catch (e) {
+            console.error('WaveSurfer core error:', e);
+        }
+    </script>
+    <script src="envelope.min.js"></script>
+    <script>
+        console.log('Envelope plugin load attempt at ' + new Date().toISOString());
+        try {
+            fetch('envelope.min.js').then(res => res.text()).then(text => {
+                console.log('Envelope.js content length: ' + text.length + ' chars');
+            });
+            console.log('WaveSurfer after envelope:', typeof WaveSurfer, Object.keys(WaveSurfer || {}));
+            if (typeof WaveSurfer !== 'undefined' && WaveSurfer.envelope) {
+                console.log('Envelope plugin loaded at ' + new Date().toISOString());
+            } else {
+                console.log('Envelope plugin not loaded at ' + new Date().toISOString());
+            }
+        } catch (e) {
+            console.error('Envelope plugin error:', e);
+        }
+    </script>
+    <style>
+        body { font-family: 'Courier New', monospace; background-color: #1b2a3f; color: white; }
+        h1 { color: #999999; }
+        .waveform-container { height: 100px; margin: 10px 0; background-color: #222; border: 1px solid #444; }
+        .waveform-controls { display: flex; gap: 5px; flex-wrap: wrap; }
+        .waveform-button { padding: 5px 10px; background-color: #555; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        .waveform-button:hover { background-color: #777; }
+        .waveform-button.active { background-color: #4CAF50; }
+        .error-message { color: red; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <script>
+        // Wait for plugins
+        function waitForPlugins(callback) {
+            const plugins = ['envelope'];
+            let attempts = 0;
+            function checkPlugin() {
+                if (typeof WaveSurfer !== 'undefined' && plugins.every(p => WaveSurfer[p])) {
+                    console.log('All plugins loaded at ' + new Date().toISOString() + ':', Object.keys(WaveSurfer));
+                    callback();
+                } else {
+                    attempts++;
+                    if (attempts < 50) {
+                        setTimeout(checkPlugin, 100);
+                    } else {
+                        console.error('Plugin loading timeout at ' + new Date().toISOString() + ':', {
+                            envelope: !!WaveSurfer.envelope
+                        });
+                        callback();
+                    }
+                }
+            }
+            console.log('Starting plugin check at ' + new Date().toISOString());
+            checkPlugin();
+        }
+
+        // Render tracks
+        function renderWAVTracks(jsonObj, containerId) {
+            console.log('Rendering tracks at ' + new Date().toISOString());
+            var container = document.getElementById(containerId);
+            container.innerHTML = '';
+            var tracks = (jsonObj.app.edit.Tracks || []).sort();
+            var wavTable = document.createElement('table');
+            wavTable.border = '0';
+            var waveformData = [];
+
+            tracks.forEach(function(track, i) {
+                var row = wavTable.insertRow(0);
+                var cell = row.insertCell(0);
+                var waveformId = 'waveform-' + i;
+                cell.innerHTML = `
+                    <div>
+                        <a href="/play/${track}">${track}</a>
+                        <div id="${waveformId}" class="waveform-container"></div>
+                        <div class="waveform-controls">
+                            <button class="waveform-button" onclick="wavesurfers[${i}]?.playPause()">Play/Pause</button>
+                            <button class="waveform-button envelope-toggle" onclick="toggleEnvelope(${i})">Toggle Envelope</button>
+                            <span class="error-message" id="error-${i}"></span>
+                        </div>
+                    </div>`;
+                waveformData.push({ index: i, waveformId: waveformId, track: track });
+            });
+
+            container.appendChild(wavTable);
+
+            window.wavesurfers = window.wavesurfers || [];
+            waveformData.forEach(function(data) {
+                try {
+                    if (typeof WaveSurfer === 'undefined') {
+                        throw new Error('WaveSurfer.js not loaded');
+                    }
+                    var wavesurfer = WaveSurfer.create({
+                        container: '#' + data.waveformId,
+                        waveColor: 'violet',
+                        progressColor: 'purple',
+                        height: 100,
+                        responsive: true,
+                        plugins: [
+                            WaveSurfer.envelope ? WaveSurfer.envelope.create({ volume: 1.0 }) : null
+                        ].filter(p => p)
+                    });
+                    wavesurfer.load('/' + data.track);
+                    wavesurfer.on('ready', function() {
+                        console.log('Waveform ' + data.index + ' ready at ' + new Date().toISOString());
+                        window.wavesurfers[data.index] = wavesurfer;
+                        wavesurfer.isEnvelopeApplied = false;
+                    });
+                    wavesurfer.on('error', function(e) {
+                        document.getElementById('error-' + data.index).textContent = 'Error: ' + e.message;
+                    });
+                    window.wavesurfers[data.index] = wavesurfer;
+                } catch (e) {
+                    console.error('WaveSurfer init error for ' + data.track + ':', e);
+                    document.getElementById('error-' + data.index).textContent = 'Failed to load waveform: ' + e.message;
+                }
+            });
+        }
+
+        // Toggle envelope
+        function toggleEnvelope(index) {
+            console.log('Toggling envelope for index ' + index + ' at ' + new Date().toISOString());
+            var wavesurfer = window.wavesurfers[index];
+            if (wavesurfer && wavesurfer.envelope) {
+                wavesurfer.isEnvelopeApplied = !wavesurfer.isEnvelopeApplied;
+                wavesurfer.envelope.setFade(wavesurfer.isEnvelopeApplied ? 2 : 0, 0, wavesurfer.isEnvelopeApplied ? 2 : 0, 0);
+                var button = document.querySelector(`#waveform-${index} ~ .waveform-controls .envelope-toggle`);
+                if (button) button.classList.toggle('active', wavesurfer.isEnvelopeApplied);
+            } else {
+                document.getElementById('error-' + index).textContent = 'Envelope unavailable: Plugin not loaded';
+            }
+        }
+
+        // Render control interface
+        function renderControlInterface(jsonObj, containerId) {
+            console.log('Rendering control interface at ' + new Date().toISOString());
+            var container = document.getElementById(containerId);
+            container.innerHTML = '';
+            var isRecording = jsonObj.app.edit.current_recording && jsonObj.app.edit.current_recording !== '';
+            container.innerHTML = `
+                <div>
+                    <button class="interface-button ${isRecording ? 'stop' : 'start'}">
+                        <a href="${isRecording ? '/stop' : '/start'}">${isRecording ? 'STOP CAPTURE' : 'CAPTURE'}</a>
+                    </button>
+                </div>`;
+        }
+
+        // Start status polling
+        function startStatusPolling() {
+            console.log('Starting status polling at ' + new Date().toISOString());
+            setInterval(function() {
+                console.log('Status poll at ' + new Date().toISOString());
+                fetch('/status', { cache: 'no-store' }).then(response => {
+                    if (!response.ok) {
+                        throw new Error('Status fetch failed: ' + response.status);
+                    }
+                    return response.text();
+                }).then(html => {
+                    var parser = new DOMParser();
+                    var doc = parser.parseFromString(html, 'text/html');
+                    var newJsonScript = doc.querySelector('script').textContent.match(/var jsonObject = ({.*});/);
+                    if (newJsonScript) {
+                        var newJson = JSON.parse(newJsonScript[1]);
+                        renderControlInterface(newJson, 'control-interface');
+                    }
+                }).catch(err => {
+                    console.error('Status poll error:', err);
+                    document.getElementById('current-status').innerHTML += '<p class="error-message">Status update failed: ' + err.message + '</p>';
+                });
+            }, 2000);
+        }
+
+        // Initialize UI
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM content loaded at ' + new Date().toISOString());
+            waitForPlugins(function() {
+                console.log('Plugins check complete at ' + new Date().toISOString());
+                var jsonObject = {{{jsonData}}};
+                renderControlInterface(jsonObject, 'control-interface');
+                renderWAVTracks(jsonObject, 'wav-tracks');
+                startStatusPolling();
+            });
+        });
+    </script>
+    <div id="current-status"></div>
+    <div id="control-interface"></div>
+    <div id="wav-tracks"></div>
 </body>
 </html>
 ]]
@@ -818,7 +1026,7 @@ local creamWebApp = turbo.web.Application:new({
   {"/empty", creamWebEmptyHandler},
   {"/synchronize", creamWebSynchronizeHandler},
   {"/(.*%.js)$", creamJsHandler},
---  {"/spectrogram.min.js", creamJsHandler},
+  {"/spectrogram.min.js", creamJsHandler},
   {"/play/(.*)$", creamWebPlayHandler},
   {"/favicon.ico", creamFaviconHandler},
   {"^/.*%.wav$", creamWavHandler},
