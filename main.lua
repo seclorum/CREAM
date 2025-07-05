@@ -65,16 +65,7 @@ local statusTemplate = [[
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CREAM::{{hostname}}</title>
-    <!-- WaveSurfer.js and plugins -->
- <script src="wavesurfer.min.js" onerror="console.error('Failed to load wavesurfer.min.js'); logPluginStatus('wavesurfer')"></script>
-    <script src="regions.min.js" onerror="console.error('Failed to load regions.min.js'); logPluginStatus('regions')"></script>
-    <script src="envelope.min.js" onerror="console.error('Failed to load envelope.min.js'); logPluginStatus('envelope')"></script>
-    <script src="hover.min.js" onerror="console.error('Failed to load hover.min.js'); logPluginStatus('hover')"></script>
-    <script src="minimap.min.js" onerror="console.error('Failed to load minimap.min.js'); logPluginStatus('minimap')"></script>
-    <script src="spectrogram.min.js" onerror="console.error('Failed to load spectrogram.min.js'); logPluginStatus('spectrogram')"></script>
-    <script src="timeline.min.js" onerror="console.error('Failed to load timeline.min.js'); logPluginStatus('timeline')"></script>
-    <script src="zoom.min.js" onerror="console.error('Failed to load zoom.min.js'); logPluginStatus('zoom')"></script>
-    <style>
+   <style>
         body { font-family: 'Courier New', monospace; background-color: {{backgroundColor}}; color: white; }
         h1, h2, h3, h4, h5, h6 { color: #999999; }
         a:link, a:visited { color: black; }
@@ -112,22 +103,49 @@ local statusTemplate = [[
     </style>
 </head>
 <body>
-    <script>
+    <!-- WaveSurfer.js and plugins -->
+ <script src="/wavesurfer.min.js" onerror="console.error('Failed to load wavesurfer.min.js'); logPluginStatus('wavesurfer')"></script>
+    <script src="/regions.min.js" onerror="console.error('Failed to load regions.min.js'); logPluginStatus('regions')"></script>
+    <script src="/envelope.min.js" onerror="console.error('Failed to load envelope.min.js'); logPluginStatus('envelope')"></script>
+    <script src="/hover.min.js" onerror="console.error('Failed to load hover.min.js'); logPluginStatus('hover')"></script>
+    <script src="/minimap.min.js" onerror="console.error('Failed to load minimap.min.js'); logPluginStatus('minimap')"></script>
+    <script src="/spectrogram.min.js" onerror="console.error('Failed to load spectrogram.min.js'); logPluginStatus('spectrogram')"></script>
+    <script src="/timeline.min.js" onerror="console.error('Failed to load timeline.min.js'); logPluginStatus('timeline')"></script>
+    <script src="/zoom.min.js" onerror="console.error('Failed to load zoom.min.js'); logPluginStatus('zoom')"></script>
+<script>
+
+    console.log('WaveSurfer after scripts load:', {
+        type: typeof WaveSurfer,
+        WaveSurfer: WaveSurfer,
+        regions: !!WaveSurfer?.Regions,
+        envelope: !!WaveSurfer?.Envelope,
+        hover: !!WaveSurfer?.Hover,
+        minimap: !!WaveSurfer?.Minimap,
+        spectrogram: !!WaveSurfer?.Spectrogram,
+        timeline: !!WaveSurfer?.Timeline,
+        zoom: !!WaveSurfer?.Zoom
+    });
+
         // Wait for WaveSurfer plugins to load
         function waitForPlugins(callback) {
-            const plugins = ['regions', 'envelope', 'hover', 'minimap', 'spectrogram', 'timeline', 'zoom'];
+            const plugins = ['Regions', 'Envelope', 'Hover', 'Minimap', 'Spectrogram', 'Timeline', 'Zoom'];
             let attempts = 0;
             function checkPlugin() {
                 if (typeof WaveSurfer !== 'undefined' && plugins.every(p => WaveSurfer[p])) {
                     console.log('All plugins loaded:', Object.keys(WaveSurfer));
                     callback();
-                } else if (attempts < 3) {
+                } else if (attempts < 5) {
                     attempts++;
-                    setTimeout(checkPlugin, 3);
+                    setTimeout(checkPlugin, 100);
                 } else {
                     console.error('Plugin loading timeout:', {
-                        regions: !!WaveSurfer.regions, envelope: !!WaveSurfer.envelope, hover: !!WaveSurfer.hover,
-                        minimap: !!WaveSurfer.minimap, spectrogram: !!WaveSurfer.spectrogram, timeline: !!WaveSurfer.timeline, zoom: !!WaveSurfer.zoom
+                        regions: !!WaveSurfer.Regions, 
+						envelope: !!WaveSurfer.Envelope, 
+						hover: !!WaveSurfer.Hover,
+                        minimap: !!WaveSurfer.Minimap, 
+						spectrogram: !!WaveSurfer.Spectrogram, 
+						timeline: !!WaveSurfer.Rimeline, 
+						zoom: !!WaveSurfer.zoom
                     });
                     document.getElementById('current-status').innerHTML += '<p class="error-message">Error: Some plugins failed to load.</p>';
                     callback();
@@ -244,6 +262,17 @@ local statusTemplate = [[
             waveformData.forEach(data => {
                 try {
                     if (typeof WaveSurfer === 'undefined') throw new Error('WaveSurfer.js failed to load');
+					console.log('Initializing WaveSurfer for track:', data.track);
+					        console.log('Available plugins:', {
+					            regions: !!WaveSurfer.Regions,
+					            envelope: !!WaveSurfer.Envelope,
+					            hover: !!WaveSurfer.Hover,
+					            minimap: !!WaveSurfer.Minimap,
+					            spectrogram: !!WaveSurfer.Spectrogram,
+					            timeline: !!WaveSurfer.Timeline,
+					            zoom: !!WaveSurfer.Zoom
+					});
+
                     var wavesurfer = WaveSurfer.create({
                         container: '#' + data.waveformId,
                         waveColor: 'violet',
@@ -252,15 +281,18 @@ local statusTemplate = [[
                         responsive: true,
                         backend: 'MediaElement',
                         plugins: [
-                            WaveSurfer.regions?.create(),
-                            WaveSurfer.envelope?.create({ volume: 1.0, fadeInStart: 0, fadeInEnd: 0, fadeOutStart: 0, fadeOutEnd: 0 }),
-                            WaveSurfer.hover?.create({ lineColor: '#fff', lineWidth: 2, labelBackground: '#555', labelColor: '#fff' }),
-                            WaveSurfer.minimap?.create({ height: 30, waveColor: '#ddd', progressColor: '#999' }),
-                            WaveSurfer.spectrogram?.create({ container: '#' + data.waveformId + '-spectrogram', fftSamples: 512, labels: true }),
-                            WaveSurfer.timeline?.create({ container: '#' + data.waveformId + '-timeline' }),
-                            WaveSurfer.zoom?.create({ zoom: 100 })
+                            WaveSurfer.Regions?.create(),
+                            WaveSurfer.Envelope?.create({ volume: 1.0, fadeInStart: 0, fadeInEnd: 0, fadeOutStart: 0, fadeOutEnd: 0 }),
+                            WaveSurfer.Hover?.create({ lineColor: '#fff', lineWidth: 2, labelBackground: '#555', labelColor: '#fff' }),
+                            WaveSurfer.Minimap?.create({ height: 30, waveColor: '#ddd', progressColor: '#999' }),
+                            WaveSurfer.Spectrogram?.create({ container: '#' + data.waveformId + '-spectrogram', fftSamples: 512, labels: true }),
+                            WaveSurfer.Timeline?.create({ container: '#' + data.waveformId + '-timeline' }),
+                            WaveSurfer.Zoom?.create({ zoom: 100 })
                         ].filter(plugin => plugin)
                     });
+
+					console.log('WaveSurfer plugins initialized:', wavesurfer.plugins);
+
                     var waveformContainer = document.getElementById(data.waveformId);
                     var spectrogramDiv = document.createElement('div');
                     spectrogramDiv.id = data.waveformId + '-spectrogram';
