@@ -216,118 +216,124 @@ local statusTemplate = [[
             return regions;
         }
 
-        // Render waveform tracks
-        function renderWAVTracks(jsonObj, containerId) {
-            var container = document.getElementById(containerId);
-            container.innerHTML = '';
-            var tracks = (jsonObj.app.edit.Tracks || []).sort();
-            var wavTable = document.createElement("table");
-            wavTable.border = "0";
-            var waveformData = [];
-            tracks.forEach((track, i) => {
-                var row = wavTable.insertRow(0);
-                var cell = row.insertCell(0);
-                var isCurrentRecording = jsonObj.app.edit.current_recording === track;
-                var highlightStyle = isCurrentRecording ? 'style="background-color: red;"' : '';
-                var linkClass = isCurrentRecording ? 'disabled' : 'link';
-                var waveformId = 'waveform-' + i;
-                cell.innerHTML = `<li ${highlightStyle}>
-                    <a class="${linkClass}" href="/play/${track}">${track}</a>
-                    <div id="${waveformId}" class="waveform-container"></div>
-                    <div class="waveform-controls">
-                        <button class="waveform-button" onclick="wavesurfers[${i}]?.playPause()">Play/Pause</button>
-                        <button class="waveform-button" onclick="wavesurfers[${i}]?.skip(-5)">-5s</button>
-                        <button class="waveform-button" onclick="wavesurfers[${i}]?.skip(5)">+5s</button>
-                        <button class="waveform-button silence-toggle" onclick="toggleSilenceDetection(${i})">Detect Silence</button>
-                        <button class="waveform-button" onclick="clearRegions(${i})">Clear Regions</button>
-                        <div class="silence-params">
-                            <label>Threshold (dB):</label>
-                            <input type="number" id="silence-threshold-${i}" value="-40" step="1">
-                            <label>Min Duration (s):</label>
-                            <input type="number" id="silence-duration-${i}" value="0.5" step="0.1">
-                        </div>
-                        <button class="waveform-button envelope-toggle" onclick="toggleEnvelope(${i})">Toggle Envelope</button>
-                        <button class="waveform-button minimap-toggle" onclick="toggleMinimap(${i})">Toggle Minimap</button>
-                        <button class="waveform-button spectrogram-toggle" onclick="toggleSpectrogram(${i})">Toggle Spectrogram</button>
-                        <button class="waveform-button timeline-toggle" onclick="toggleTimeline(${i})">Toggle Timeline</button>
-                        <button class="waveform-button" onclick="zoomIn(${i})">Zoom In</button>
-                        <button class="waveform-button" onclick="zoomOut(${i})">Zoom Out</button>
-                        <span class="region-label" id="region-label-${i}"></span>
-                        <span class="error-message" id="error-${i}"></span>
-                    </div></li>`;
-                waveformData.push({ index: i, waveformId: waveformId, track: track });
+function renderWAVTracks(jsonObj, containerId) {
+    var container = document.getElementById(containerId);
+    container.innerHTML = '';
+    var tracks = (jsonObj.app.edit.Tracks || []).sort();
+    var wavTable = document.createElement("table");
+    wavTable.border = "0";
+    var waveformData = [];
+    tracks.forEach((track, i) => {
+        var row = wavTable.insertRow(0);
+        var cell = row.insertCell(0);
+        var isCurrentRecording = jsonObj.app.edit.current_recording === track;
+        var highlightStyle = isCurrentRecording ? 'style="background-color: red;"' : '';
+        var linkClass = isCurrentRecording ? 'disabled' : 'link';
+        var waveformId = 'waveform-' + i;
+        cell.innerHTML = `<li ${highlightStyle}>
+            <a class="${linkClass}" href="/play/${track}">${track}</a>
+            <div id="${waveformId}" class="waveform-container"></div>
+            <div class="waveform-controls">
+                <button class="waveform-button" onclick="wavesurfers[${i}]?.playPause()">Play/Pause</button>
+                <button class="waveform-button" onclick="wavesurfers[${i}]?.skip(-5)">-5s</button>
+                <button class="waveform-button" onclick="wavesurfers[${i}]?.skip(5)">+5s</button>
+                <button class="waveform-button silence-toggle" onclick="toggleSilenceDetection(${i})">Detect Silence</button>
+                <button class="waveform-button" onclick="clearRegions(${i})">Clear Regions</button>
+                <div class="silence-params">
+                    <label>Threshold (dB):</label>
+                    <input type="number" id="silence-threshold-${i}" value="-40" step="1">
+                    <label>Min Duration (s):</label>
+                    <input type="number" id="silence-duration-${i}" value="0.5" step="0.1">
+                </div>
+                <button class="waveform-button envelope-toggle" onclick="toggleEnvelope(${i})">Toggle Envelope</button>
+                <button class="waveform-button minimap-toggle" onclick="toggleMinimap(${i})">Toggle Minimap</button>
+                <button class="waveform-button spectrogram-toggle" onclick="toggleSpectrogram(${i})">Toggle Spectrogram</button>
+                <button class="waveform-button timeline-toggle" onclick="toggleTimeline(${i})">Toggle Timeline</button>
+                <button class="waveform-button" onclick="zoomIn(${i})">Zoom In</button>
+                <button class="waveform-button" onclick="zoomOut(${i})">Zoom Out</button>
+                <span class="region-label" id="region-label-${i}"></span>
+                <span class="error-message" id="error-${i}"></span>
+            </div></li>`;
+        waveformData.push({ index: i, waveformId: waveformId, track: track });
+    });
+    container.appendChild(wavTable);
+
+    // Create container divs for spectrogram and timeline before initializing WaveSurfer
+    waveformData.forEach(data => {
+        var waveformContainer = document.getElementById(data.waveformId);
+        var spectrogramDiv = document.createElement('div');
+        spectrogramDiv.id = data.waveformId + '-spectrogram';
+        spectrogramDiv.className = 'ws-spectrogram';
+        waveformContainer.parentNode.insertBefore(spectrogramDiv, waveformContainer.nextSibling);
+        var timelineDiv = document.createElement('div');
+        timelineDiv.id = data.waveformId + '-timeline';
+        timelineDiv.className = 'ws-timeline';
+        waveformContainer.parentNode.insertBefore(timelineDiv, spectrogramDiv.nextSibling);
+    });
+
+    window.wavesurfers = window.wavesurfers || [];
+    waveformData.forEach(data => {
+        try {
+            if (typeof WaveSurfer === 'undefined') throw new Error('WaveSurfer.js failed to load');
+            console.log('Initializing WaveSurfer for track:', data.track);
+            console.log('Available plugins:', {
+                regions: !!WaveSurfer.Regions,
+                envelope: !!WaveSurfer.Envelope,
+                hover: !!WaveSurfer.Hover,
+                minimap: !!WaveSurfer.Minimap,
+                spectrogram: !!WaveSurfer.Spectrogram,
+                timeline: !!WaveSurfer.Timeline,
+                zoom: !!WaveSurfer.Zoom
             });
-            container.appendChild(wavTable);
-            window.wavesurfers = window.wavesurfers || [];
-            waveformData.forEach(data => {
-                try {
-                    if (typeof WaveSurfer === 'undefined') throw new Error('WaveSurfer.js failed to load');
-					console.log('Initializing WaveSurfer for track:', data.track);
-					        console.log('Available plugins:', {
-					            regions: !!WaveSurfer.Regions,
-					            envelope: !!WaveSurfer.Envelope,
-					            hover: !!WaveSurfer.Hover,
-					            minimap: !!WaveSurfer.Minimap,
-					            spectrogram: !!WaveSurfer.Spectrogram,
-					            timeline: !!WaveSurfer.Timeline,
-					            zoom: !!WaveSurfer.Zoom
-					});
 
-                    var wavesurfer = WaveSurfer.create({
-                        container: '#' + data.waveformId,
-                        waveColor: 'violet',
-                        progressColor: 'purple',
-                        height: 100,
-                        responsive: true,
-                        backend: 'MediaElement',
-                        plugins: [
-                            WaveSurfer.Regions?.create(),
-                            WaveSurfer.Envelope?.create({ volume: 1.0, fadeInStart: 0, fadeInEnd: 0, fadeOutStart: 0, fadeOutEnd: 0 }),
-                            WaveSurfer.Hover?.create({ lineColor: '#fff', lineWidth: 2, labelBackground: '#555', labelColor: '#fff' }),
-                            WaveSurfer.Minimap?.create({ height: 30, waveColor: '#ddd', progressColor: '#999' }),
-                            WaveSurfer.Spectrogram?.create({ container: '#' + data.waveformId + '-spectrogram', fftSamples: 512, labels: true }),
-                            WaveSurfer.Timeline?.create({ container: '#' + data.waveformId + '-timeline' }),
-                            WaveSurfer.Zoom?.create({ zoom: 100 })
-                        ].filter(plugin => plugin)
-                    });
-
-					console.log('WaveSurfer plugins initialized:', wavesurfer.plugins);
-
-                    var waveformContainer = document.getElementById(data.waveformId);
-                    var spectrogramDiv = document.createElement('div');
-                    spectrogramDiv.id = data.waveformId + '-spectrogram';
-                    spectrogramDiv.className = 'ws-spectrogram';
-                    waveformContainer.parentNode.insertBefore(spectrogramDiv, waveformContainer.nextSibling);
-                    var timelineDiv = document.createElement('div');
-                    timelineDiv.id = data.waveformId + '-timeline';
-                    timelineDiv.className = 'ws-timeline';
-                    waveformContainer.parentNode.insertBefore(timelineDiv, spectrogramDiv.nextSibling);
-                    wavesurfer.load('/' + data.track);
-                    wavesurfer.on('ready', () => {
-                        window.wavesurfers[data.index] = wavesurfer;
-                        wavesurfer.isSilenceDetected = true;
-                        wavesurfer.isMinimapVisible = true;
-                        wavesurfer.isSpectrogramVisible = true;
-                        wavesurfer.isTimelineVisible = true;
-                        wavesurfer.isEnvelopeApplied = true;
-                        //if (wavesurfer.spectrogram) wavesurfer.spectrogram.hide();
-                        //if (wavesurfer.timeline) wavesurfer.timeline.hide();
-                    });
-                    if (wavesurfer.regions) {
-                        wavesurfer.on('region-click', region => wavesurfer.play(region.start, region.end));
-                        wavesurfer.on('region-created', () => updateRegionLabel(data.index, Object.keys(wavesurfer.regions.list).length));
-                    }
-                    wavesurfer.on('error', e => {
-                        console.error('WaveSurfer error for ' + data.track + ':', e);
-                        document.getElementById('error-' + data.index).textContent = 'Error: ' + e.message;
-                    });
-                    window.wavesurfers[data.index] = wavesurfer;
-                } catch (e) {
-                    console.error('Failed to initialize WaveSurfer for ' + data.track + ':', e);
-                    document.getElementById('error-' + data.index).textContent = 'Failed to load waveform: ' + e.message;
-                }
+            var wavesurfer = WaveSurfer.create({
+                container: '#' + data.waveformId,
+                waveColor: 'violet',
+                progressColor: 'purple',
+                height: 100,
+                responsive: true,
+                backend: 'MediaElement',
+                plugins: [
+                    WaveSurfer.Regions?.create(),
+                    WaveSurfer.Envelope?.create({ volume: 1.0, fadeInStart: 0, fadeInEnd: 0, fadeOutStart: 0, fadeOutEnd: 0 }),
+                    WaveSurfer.Hover?.create({ lineColor: '#fff', lineWidth: 2, labelBackground: '#555', labelColor: '#fff' }),
+                    WaveSurfer.Minimap?.create({ height: 30, waveColor: '#ddd', progressColor: '#999' }),
+                    WaveSurfer.Spectrogram?.create({ container: '#' + data.waveformId + '-spectrogram', fftSamples: 512, labels: true }),
+                    WaveSurfer.Timeline?.create({ container: '#' + data.waveformId + '-timeline' }),
+                    WaveSurfer.Zoom?.create({ zoom: 100 })
+                ].filter(plugin => plugin)
             });
+
+            console.log('WaveSurfer plugins initialized:', wavesurfer.plugins);
+
+            wavesurfer.load('/' + data.track);
+            wavesurfer.on('ready', () => {
+                window.wavesurfers[data.index] = wavesurfer;
+                wavesurfer.isSilenceDetected = true;
+                wavesurfer.isMinimapVisible = true;
+                wavesurfer.isSpectrogramVisible = true;
+                wavesurfer.isTimelineVisible = true;
+                wavesurfer.isEnvelopeApplied = true;
+                // Optionally hide spectrogram and timeline by default
+                // if (wavesurfer.spectrogram) wavesurfer.spectrogram.hide();
+                // if (wavesurfer.timeline) wavesurfer.timeline.hide();
+            });
+            if (wavesurfer.regions) {
+                wavesurfer.on('region-click', region => wavesurfer.play(region.start, region.end));
+                wavesurfer.on('region-created', () => updateRegionLabel(data.index, Object.keys(wavesurfer.regions.list).length));
+            }
+            wavesurfer.on('error', e => {
+                console.error('WaveSurfer error for ' + data.track + ':', e);
+                document.getElementById('error-' + data.index).textContent = 'Error: ' + e.message;
+            });
+            window.wavesurfers[data.index] = wavesurfer;
+        } catch (e) {
+            console.error('Failed to initialize WaveSurfer for ' + data.track + ':', e);
+            document.getElementById('error-' + data.index).textContent = 'Failed to load waveform: ' + e.message;
         }
+    });
+}
+
 
         // Toggle silence detection
         function toggleSilenceDetection(index) {
