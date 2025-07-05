@@ -26,6 +26,20 @@ local term_height = 15 -- Height of plot area in lines (should be >= number of t
 local max_boats = 100  -- Maximum X-axis value (largest number of boats)
 local num_terms = 0    -- Count of terms for Y-axis
 
+-- Notes:
+-- Adjust 'term_width' and 'term_height' for your terminal size
+-- If plot is too dense, increase 'term_width' or reduce 'max_boats'
+-- Labels are printed to the right; ensure terminal is wide enough (>80 chars recommended)
+-- This is a basic ASCII plot; for more advanced plotting, consider a LuaJIT-compatible graphical library like 'luasdl2' or redirecting output to a file for external plotting
+-- Define players table with names and initial boat counts
+local players = {
+    { name = "Player Red", boats = 34 },
+    { name = "Player Green", boats = 18 },
+    { name = "Player Blue", boats = 80 },
+    { name = "Player Orange", boats = 90 }
+}
+
+
 -- Collect data for plotting
 local data = {}
 for num_boats, info in pairs(boat_groups) do
@@ -81,17 +95,6 @@ print(x_axis)
 local x_labels = "0" .. string.rep(" ", math.floor(term_width / 2) - 1) .. "50" .. string.rep(" ", term_width - math.floor(term_width / 2) - 2) .. "100"
 print(x_labels)
 
--- Notes:
--- Adjust 'term_width' and 'term_height' for your terminal size
--- If plot is too dense, increase 'term_width' or reduce 'max_boats'
--- Labels are printed to the right; ensure terminal is wide enough (>80 chars recommended)
--- This is a basic ASCII plot; for more advanced plotting, consider a LuaJIT-compatible graphical library like 'luasdl2' or redirecting output to a file for external plotting
--- Define players table with names and initial boat counts
-local players = {
-    { name = "Player One", boats = 5 },
-    { name = "Player Two", boats = 10 }
-}
-
 -- Function to map boat count to term from boat_groups
 local function get_boat_term(boat_count)
     local closest_term = "None"
@@ -113,6 +116,96 @@ end
 -- Generalized ASCII plotting function
 -- Arguments: players_data (table of {x, term, marker}), refs_data (table of {x, term}), term_width, term_height, max_x, title
 local function plot_ascii(players_data, refs_data, term_width, term_height, max_x, title)
+    -- Create 2D grid for ASCII plot
+    local grid = {}
+    for y = 1, term_height do
+        grid[y] = {}
+        for x = 1, term_width do
+            grid[y][x] = " "
+        end
+    end
+
+    -- Combine all data points
+    local all_data = {}
+    for _, point in ipairs(refs_data) do
+        table.insert(all_data, { x = point.x, term = point.term, marker = "o", is_player = false })
+    end
+    for _, point in ipairs(players_data) do
+        table.insert(all_data, { x = point.x, term = point.term .. " (" .. get_boat_term(point.x) .. ")", marker = point.marker, is_player = true })
+    end
+
+    -- Group points by X-value to assign same Y-position
+    local x_groups = {}
+    for _, point in ipairs(all_data) do
+        if not x_groups[point.x] then
+            x_groups[point.x] = { markers = {}, terms = {}, has_player = false }
+        end
+        table.insert(x_groups[point.x].markers, point.marker)
+        table.insert(x_groups[point.x].terms, point.term .. " (" .. point.x .. " boats)")
+        if point.is_player then
+            x_groups[point.x].has_player = true
+        end
+    end
+
+    -- Convert x_groups to a sorted list of unique X-values
+    local unique_x_values = {}
+    for x_val in pairs(x_groups) do
+        table.insert(unique_x_values, x_val)
+    end
+    table.sort(unique_x_values)
+
+    -- Check if number of unique X-values exceeds term_height
+    local num_unique_x = #unique_x_values
+    if num_unique_x > term_height then
+        print("Warning: Too many unique boat counts (" .. num_unique_x .. ") for terminal height (" .. term_height .. "). Some points may be clipped.")
+    end
+
+    -- Assign Y-positions based on unique X-values
+    local assigned_points = {}
+    for i, x_val in ipairs(unique_x_values) do
+        local x = math.floor((x_val / max_x) * (term_width - 1)) + 1
+        -- Spread Y-positions evenly, reversing to start from bottom
+        local y = term_height - math.floor((i - 1) * (term_height - 1) / (num_unique_x - 1))
+        if x >= 1 and x <= term_width and y >= 1 and y <= term_height then
+            -- Prioritize player marker if present, else use reference marker
+            local marker = x_groups[x_val].has_player and x_groups[x_val].markers[#x_groups[x_val].markers] or x_groups[x_val].markers[1]
+            grid[y][x] = marker
+            table.insert(assigned_points, { y = y, terms = x_groups[x_val].terms, x_val = x_val })
+        end
+    end
+
+    -- Sort assigned points by Y for labeling (top to bottom)
+    table.sort(assigned_points, function(a, b) return a.y < b.y end)
+
+    -- Print plot
+    print(title)
+    print("Y: Index | X: Number of Boats (0 to " .. max_x .. ")")
+    print("(* = Players, o = Reference Terms)")
+    for y = 1, term_height do
+        local row = ""
+        for x = 1, term_width do
+            row = row .. grid[y][x]
+        end
+        -- Collect all terms for this row
+        local label = ""
+        for _, point in ipairs(assigned_points) do
+            if point.y == y then
+                label = table.concat(point.terms, ", ")
+                break
+            end
+        end
+        print(row .. "  " .. (label ~= "" and label or ""))
+    end
+    local x_axis = string.rep("-", term_width)
+    print(x_axis)
+    local half_x = math.floor(max_x / 2)
+    local x_labels = "0" .. string.rep(" ", math.floor(term_width / 2) - 1) .. half_x .. string.rep(" ", term_width - math.floor(term_width / 2) - string.len(tostring(half_x)) - 1) .. max_x
+    print(x_labels)
+end
+
+-- Generalized ASCII plotting function
+-- Arguments: players_data (table of {x, term, marker}), refs_data (table of {x, term}), term_width, term_height, max_x, title
+local function plot_ascii_old(players_data, refs_data, term_width, term_height, max_x, title)
     -- Create 2D grid for ASCII plot
     local grid = {}
     for y = 1, term_height do
