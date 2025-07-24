@@ -9,11 +9,19 @@ CREAM uses the turbo.lua framework for its asynchronous system event and http ha
 
 With CREAM, a user can connect to an embedded Linux system and trigger audio recordings remotely, with immediate access to captured media via the web interface.
 
-I currently use the clockworkPi uConsole paired with an Austrian Audio miCreator microphone for development.  Multimple microphones can be configured per host, providing an ideal recording solution for conference and meeting applications, or even for studio/musician/creative environments.
+I currently use the clockworkPi uConsole [1] paired with an Austrian Audio miCreator microphone [2] for development.  Multimple microphones can be configured per host, providing an ideal recording solution for conference and meeting applications, or even for studio/musician/creative environments.
 
 The goal is eventually to add an IPFS gateway to CREAM, so that any media recorded through the CREAM system immediately becomes available on the Interplanetary Filesystem.
 
 ## Current status:
 
-In active development - all basic I/O features are implemented, including remote recording, management of a media pool, and serving of media files over a web interface.  I am currently in the middle of integrating the wonderful wavesurfer.js front-end framework, to give more fine-grained access to media, such as regions, silence detection, thumbnail navigation of media files, and so on.
+In active development - all basic I/O features are implemented, including remote recording, management of a media pool, and serving of media files over a web interface.  
 
+I am currently in the middle of integrating the wonderful wavesurfer.js front-end UI framework [3], to give more fine-grained access to media, such as regions, silence detection, thumbnail navigation of media files, and so on.
+
+
+[1] https://www.clockworkpi.com/home-uconsole
+
+[2] https://de.austrian.audio/product/micreator-studio/
+
+[3] https://wavesurfer.xyz
